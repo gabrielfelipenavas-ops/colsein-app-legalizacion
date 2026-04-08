@@ -14,9 +14,9 @@ module.exports = {
     use_env_variable: 'DATABASE_URL',
     dialect: 'postgres',
     logging: false,
-    dialectOptions: {
-      ssl: { require: true, rejectUnauthorized: false },
-    },
+    dialectOptions: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('.railway.internal')
+      ? {}
+      : { ssl: { require: true, rejectUnauthorized: false } },
     pool: { max: 20, min: 5, acquire: 60000, idle: 10000 },
   },
 };

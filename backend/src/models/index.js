@@ -9,7 +9,9 @@ const sequelize = process.env.DATABASE_URL && env === 'production'
   ? new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
       logging: false,
-      dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
+      dialectOptions: process.env.DATABASE_URL.includes('.railway.internal')
+        ? {}
+        : { ssl: { require: true, rejectUnauthorized: false } },
       pool: dbConfig.pool || { max: 10, min: 2, acquire: 30000, idle: 10000 },
     })
   : new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {
