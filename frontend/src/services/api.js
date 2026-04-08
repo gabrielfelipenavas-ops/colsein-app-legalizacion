@@ -92,6 +92,13 @@ export const legalizationAPI = {
   approve: (id, action, comentarios) => api.post(`/legalizations/${id}/approve`, { action, comentarios }),
 };
 
+// ── EMAIL ──
+export const emailAPI = {
+  search: (params) => api.get('/email/search', { params }),
+  match: () => api.post('/email/match'),
+  downloadAttachment: (uid, filename) => api.get(`/email/attachment/${uid}/${filename}`, { responseType: 'blob' }),
+};
+
 // ── REPORTS ──
 export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),

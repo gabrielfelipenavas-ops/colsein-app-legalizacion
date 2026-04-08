@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle } from 'lucide-react';
-import { expenseAPI } from '../services/api';
+import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2 } from 'lucide-react';
+import { expenseAPI, emailAPI } from '../services/api';
 import { fmt } from '../utils/helpers';
 
 const CATEGORIAS = [
@@ -39,6 +39,110 @@ const emptyForm = {
   sin_soporte: false,
   justificacion_sin_soporte: '',
 };
+
+function EmailSearchSection({ expenses }) {
+  const [searching, setSearching] = useState(false);
+  const [matches, setMatches] = useState(null);
+  const [emailResults, setEmailResults] = useState(null);
+  const [error, setError] = useState('');
+
+  const autoMatch = async () => {
+    setSearching(true);
+    setError('');
+    try {
+      const { data } = await emailAPI.match();
+      setMatches(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al buscar en el correo');
+    }
+    setSearching(false);
+  };
+
+  const searchRecent = async () => {
+    setSearching(true);
+    setError('');
+    try {
+      const { data } = await emailAPI.search({ limit: 15 });
+      setEmailResults(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al buscar en el correo');
+    }
+    setSearching(false);
+  };
+
+  return (
+    <div className="card mx-4 mt-3">
+      <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Mail size={16} className="text-violet-500" /> Facturas Electrónicas (Correo)</h3>
+      <p className="text-xs text-slate-400 mb-3">Busca facturas electrónicas en el correo centralizado y relaciónolas con tus gastos.</p>
+
+      <div className="flex gap-2 mb-3">
+        <button onClick={autoMatch} disabled={searching || expenses.length === 0} className="btn-primary flex-1 !bg-violet-500 hover:!bg-violet-600 !py-2 !text-xs disabled:opacity-50">
+          {searching ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Link2 size={14} />}
+          {searching ? 'Buscando...' : 'Cruzar con mis gastos'}
+        </button>
+        <button onClick={searchRecent} disabled={searching} className="btn-outline flex-1 !py-2 !text-xs disabled:opacity-50">
+          <Search size={14} /> Ver recientes
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3">
+          <p className="text-xs font-semibold text-red-600">{error}</p>
+        </div>
+      )}
+
+      {matches && (
+        <div className="space-y-2">
+          <div className="bg-violet-50 rounded-xl p-2.5">
+            <p className="text-xs font-semibold text-violet-700">
+              {matches.matches.length} coincidencia(s) encontrada(s) de {matches.total_expenses} gastos y {matches.total_emails} correos
+            </p>
+          </div>
+          {matches.matches.length === 0 && (
+            <p className="text-xs text-slate-400 text-center py-2">No se encontraron coincidencias. Las facturas electrónicas pueden tardar en llegar al correo.</p>
+          )}
+          {matches.matches.map((m, i) => (
+            <div key={i} className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <div className="flex items-center gap-1 mb-1">
+                <CheckCircle size={12} className="text-emerald-500" />
+                <span className="text-[10px] font-bold text-emerald-700">Coincidencia ({m.confidence}%)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="font-bold text-slate-700">{m.expense.establecimiento || 'Sin nombre'}</p>
+                  <p className="text-slate-400">{m.expense.fecha} · {fmt(parseFloat(m.expense.valor))}</p>
+                </div>
+                <div>
+                  <p className="font-bold text-violet-700 truncate">{m.email.subject}</p>
+                  <p className="text-slate-400 truncate">{m.email.from}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {emailResults && !matches && (
+        <div className="space-y-2">
+          {emailResults.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No se encontraron facturas recientes en el correo.</p>}
+          {emailResults.map((email, i) => (
+            <div key={i} className="p-2.5 bg-slate-50 rounded-xl">
+              <div className="flex items-center gap-2">
+                {email.hasXml && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">XML</span>}
+                {email.hasPdf && <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">PDF</span>}
+                <span className="text-[10px] text-slate-400">{new Date(email.date).toLocaleDateString('es-CO')}</span>
+              </div>
+              <p className="text-xs font-bold text-slate-700 truncate mt-1">{email.subject}</p>
+              <p className="text-[10px] text-slate-400 truncate">{email.from}</p>
+              {email.extracted?.nit && <p className="text-[10px] text-violet-600 mt-0.5">NIT: {email.extracted.nit}</p>}
+              {email.extracted?.valor && <p className="text-[10px] text-emerald-600">Valor: {fmt(email.extracted.valor)}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FacturasPage() {
   const fileRef = useRef(null);
@@ -458,6 +562,9 @@ export default function FacturasPage() {
           </div>
         </div>
       )}
+
+      {/* Buscar facturas en correo */}
+      <EmailSearchSection expenses={expenses} />
 
       <div className="card mx-4 mt-3">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><FileText size={16} className="text-colsein-500" /> Documentos Soportados</h3>

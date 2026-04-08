@@ -31,6 +31,7 @@ app.use('/api/anticipos', require('./routes/anticipos'));
 app.use('/api/expenses', require('./routes/expenses'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/legalizations', require('./routes/legalizations'));
+app.use('/api/email', require('./routes/email'));
 app.use('/api/config', require('./routes/config'));
 
 // Health check
