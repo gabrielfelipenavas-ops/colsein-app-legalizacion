@@ -130,7 +130,7 @@ export default function FacturasPage() {
       <div className="card mx-4">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Camera size={16} className="text-orange-500" /> Escaneo Inteligente de Facturas</h3>
         <p className="text-xs text-slate-400 mb-4 leading-relaxed">Toma una foto de cualquier factura. La IA extraerá automáticamente los datos.</p>
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+        <input ref={fileRef} type="file" accept="image/*"  onChange={handleFile} className="hidden" />
         <div className="flex gap-2">
           <button onClick={() => fileRef.current?.click()} className="btn-primary flex-1 !bg-amber-500 hover:!bg-amber-600">
             <Camera size={18} /> Escanear
@@ -254,7 +254,7 @@ export default function FacturasPage() {
             {!file && (
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Foto del soporte</label>
-                <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(URL.createObjectURL(f)); } }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                <input ref={fileRef} type="file" accept="image/*"  onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(URL.createObjectURL(f)); } }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
               </div>
             )}
 

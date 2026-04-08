@@ -8,7 +8,7 @@ function PhotoUpload({ label, value, onChange, required, colorClass = 'border-em
   const handleFile = (e) => { const f = e.target.files?.[0]; if (f) onChange(f); };
   return (
     <div>
-      <input ref={ref} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+      <input ref={ref} type="file" accept="image/*"  onChange={handleFile} className="hidden" />
       {value ? (
         <div className={`relative rounded-xl overflow-hidden border-2 ${colorClass}`}>
           <img src={typeof value === 'string' ? value : URL.createObjectURL(value)} alt={label} className="w-full h-24 object-cover" />
