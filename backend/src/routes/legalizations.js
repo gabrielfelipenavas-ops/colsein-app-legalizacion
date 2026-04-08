@@ -43,7 +43,7 @@ router.get('/:id', auth, async (req, res) => {
 // POST /api/legalizations — create from travel request or standalone
 router.post('/', auth, async (req, res) => {
   try {
-    const { travel_request_id, ciudades_visitadas } = req.body;
+    const { travel_request_id, ciudades_visitadas, moneda, tipo, motivo } = req.body;
     let valor_anticipo = 0;
 
     if (travel_request_id) {
@@ -57,9 +57,14 @@ router.post('/', auth, async (req, res) => {
       user_id: req.user.id,
       travel_request_id: travel_request_id || null,
       ciudades_visitadas: ciudades_visitadas || '',
+      moneda: moneda || 'COP',
       valor_anticipo,
       estado: 'borrador',
     });
+    // Store extra fields as JSON in observaciones_imprevistos for now
+    if (tipo || motivo) {
+      await leg.update({ observaciones_imprevistos: JSON.stringify({ tipo: tipo || 'local', motivo: motivo || '' }) });
+    }
 
     res.status(201).json(leg);
   } catch (err) {

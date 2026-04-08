@@ -6,8 +6,8 @@ const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },
   { to: '/km', icon: Route, label: 'Km' },
   { to: '/facturas', icon: Camera, label: 'Facturas' },
-  { to: '/viajes', icon: FileText, label: 'Viajes' },
-  { to: '/clientes', icon: Users, label: 'Clientes' },
+  { to: '/legalizacion', icon: FileText, label: 'Legalizar' },
+  { to: '/viajes', icon: Shield, label: 'Viajes' },
   { to: '/reportes', icon: BarChart3, label: 'Reportes' },
 ];
 

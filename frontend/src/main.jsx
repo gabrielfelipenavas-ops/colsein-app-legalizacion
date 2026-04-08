@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage';
 import KilometrajePage from './pages/KilometrajePage';
 import FacturasPage from './pages/FacturasPage';
 import ViajesPage from './pages/ViajesPage';
+import LegalizacionPage from './pages/LegalizacionPage';
 import ReportesPage from './pages/ReportesPage';
 import ClientesPage from './pages/ClientesPage';
 import UsuariosPage from './pages/UsuariosPage';
@@ -36,6 +37,7 @@ function App() {
             <Route index element={<HomePage />} />
             <Route path="km" element={<KilometrajePage />} />
             <Route path="facturas" element={<FacturasPage />} />
+            <Route path="legalizacion" element={<LegalizacionPage />} />
             <Route path="viajes" element={<ViajesPage />} />
             <Route path="reportes" element={<ReportesPage />} />
             <Route path="clientes" element={<ClientesPage />} />

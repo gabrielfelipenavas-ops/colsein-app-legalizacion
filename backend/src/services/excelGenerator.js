@@ -190,216 +190,230 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('LEGALIZACION');
 
-  // Columnas: # | Fecha | Ciudad | Alojamiento | Alimentación | Transportes | Peajes | Parqueaderos | Taxis | Imprevistos | G.Representación | Otros | Total Día | Medio Pago | Establecimiento
-  const CATS = [
-    { key: 'alojamiento', label: 'ALOJAMIENTO', col: 4 },
-    { key: 'alimentacion', label: 'ALIMENTACIÓN', col: 5 },
-    { key: 'transportes', label: 'TRANSPORTES', col: 6 },
-    { key: 'peaje', label: 'PEAJES', col: 7 },
-    { key: 'parqueadero', label: 'PARQUEADEROS', col: 8 },
-    { key: 'taxi', label: 'TAXIS', col: 9 },
-    { key: 'imprevistos', label: 'IMPREVISTOS', col: 10 },
-    { key: 'representacion', label: 'G. REPRESENT.', col: 11 },
-    { key: 'otro', label: 'OTROS', col: 12 },
-  ];
-
-  ws.columns = [
-    { width: 4 },   // A #
-    { width: 13 },  // B Fecha
-    { width: 16 },  // C Ciudad/Establecimiento
-    { width: 14 },  // D Alojamiento
-    { width: 14 },  // E Alimentación
-    { width: 14 },  // F Transportes
-    { width: 12 },  // G Peajes
-    { width: 14 },  // H Parqueaderos
-    { width: 12 },  // I Taxis
-    { width: 14 },  // J Imprevistos
-    { width: 14 },  // K G. Representación
-    { width: 12 },  // L Otros
-    { width: 15 },  // M Total Día
-    { width: 13 },  // N Medio Pago
-  ];
-
   const blue = '004A7C';
   const lightBlue = 'E8F4FD';
   const headerFont = { name: 'Arial', bold: true, size: 9, color: { argb: 'FFFFFF' } };
   const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } };
+  const catFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
   const borderThin = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
   const currencyFmt = '$#,##0';
+  const boldFont9 = { name: 'Arial', bold: true, size: 9 };
+  const normalFont9 = { name: 'Arial', size: 9 };
 
-  // ── HEADER ──
-  ws.mergeCells('B2:G3');
-  ws.getCell('B2').value = 'LEGALIZACIÓN DE GASTOS DE VIAJE\nCOLSEIN S.A.S. — NIT 800.002.030';
-  ws.getCell('B2').font = { name: 'Arial', bold: true, size: 12, color: { argb: blue } };
-  ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  // Category rows (transportes includes taxis, peajes, parqueaderos)
+  const CAT_ROWS = [
+    { key: 'alojamiento', label: 'ALOJAMIENTO' },
+    { key: 'alimentacion', label: 'ALIMENTACIÓN' },
+    { key: 'transportes', label: 'TRANSPORTES (Taxis, Peajes, Parqueaderos)' },
+    { key: 'imprevistos', label: 'IMPREVISTOS' },
+    { key: 'representacion', label: 'GASTOS DE REPRESENTACIÓN' },
+  ];
+  const transportKeys = ['transportes', 'peaje', 'parqueadero', 'taxi'];
 
-  // User info
-  ws.getCell('B5').value = 'NOMBRE:';
-  ws.getCell('B5').font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell('C5').value = user.nombre;
+  // Get unique sorted dates
+  const sorted = [...expenses].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  const uniqueDates = [...new Set(sorted.map(e => e.fecha))].sort();
 
-  ws.getCell('B6').value = 'CÉDULA:';
-  ws.getCell('B6').font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell('C6').value = user.cedula;
+  // Build matrix: category -> date -> sum
+  const matrix = {};
+  CAT_ROWS.forEach(c => { matrix[c.key] = {}; uniqueDates.forEach(d => { matrix[c.key][d] = 0; }); });
 
-  ws.getCell('B7').value = 'ZONA:';
-  ws.getCell('B7').font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell('C7').value = user.zona || '';
+  sorted.forEach(exp => {
+    const val = parseFloat(exp.valor || 0);
+    let catKey = exp.categoria;
+    if (transportKeys.includes(catKey)) catKey = 'transportes';
+    if (!matrix[catKey]) catKey = 'imprevistos'; // fallback for 'otro'
+    if (matrix[catKey]) matrix[catKey][exp.fecha] = (matrix[catKey][exp.fecha] || 0) + val;
+  });
 
+  // Check if credit card was used
+  const usedTC = sorted.some(e => e.medio_pago === 'tarjeta_credito');
+  const moneda = legalization.moneda || 'COP';
+  let extraData = {};
+  try { extraData = JSON.parse(legalization.observaciones_imprevistos || '{}'); } catch {}
+  const tipo = extraData.tipo || 'viaje';
+  const motivo = extraData.motivo || '';
+
+  // ── COLUMN WIDTHS ──
+  // A=label(30), B..N=dates(14 each), last=TOTAL(15)
+  const totalCols = 1 + uniqueDates.length + 1; // label + dates + total
+  ws.getColumn(1).width = 34;
+  for (let i = 2; i <= uniqueDates.length + 1; i++) ws.getColumn(i).width = 14;
+  ws.getColumn(totalCols).width = 16;
+
+  // ── TITLE ──
+  const titleEnd = Math.min(totalCols, 6);
+  ws.mergeCells(1, 1, 1, titleEnd);
+  ws.getCell(1, 1).value = 'LEGALIZACIÓN DE GASTOS — COLSEIN S.A.S.';
+  ws.getCell(1, 1).font = { name: 'Arial', bold: true, size: 14, color: { argb: blue } };
+  ws.getCell(1, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 30;
+
+  ws.mergeCells(2, 1, 2, titleEnd);
+  ws.getCell(2, 1).value = 'NIT 800.002.030 — Medición, Control y Automatización Industrial';
+  ws.getCell(2, 1).font = { name: 'Arial', size: 9, color: { argb: '666666' } };
+  ws.getCell(2, 1).alignment = { horizontal: 'center' };
+
+  // ── INFO BLOCK ──
+  const info = [
+    ['COLABORADOR:', user.nombre],
+    ['CÉDULA:', user.cedula],
+    ['TIPO:', tipo === 'local' ? 'Gasto Local' : 'Viaje'],
+    ['MONEDA:', moneda === 'COP' ? 'Pesos Colombianos (COP)' : moneda === 'USD' ? 'Dólares (USD)' : moneda === 'EUR' ? 'Euros (EUR)' : moneda],
+    ['TARJETA CRÉDITO:', usedTC ? 'Sí' : 'No'],
+  ];
+  if (legalization.ciudades_visitadas) info.push(['CIUDAD(ES):', legalization.ciudades_visitadas]);
   if (travelRequest) {
-    ws.getCell('H5').value = 'CONSECUTIVO:';
-    ws.getCell('H5').font = { name: 'Arial', bold: true, size: 9 };
-    ws.getCell('I5').value = travelRequest.consecutivo;
-
-    ws.getCell('H6').value = 'DESTINO:';
-    ws.getCell('H6').font = { name: 'Arial', bold: true, size: 9 };
-    ws.getCell('I6').value = travelRequest.ciudad_destino;
-
-    ws.getCell('H7').value = 'FECHAS:';
-    ws.getCell('H7').font = { name: 'Arial', bold: true, size: 9 };
+    info.push(['MOTIVO VIAJE:', travelRequest.motivo || '']);
+    info.push(['DESTINO:', travelRequest.ciudad_destino]);
     const fIda = new Date(travelRequest.fecha_ida).toLocaleDateString('es-CO');
     const fReg = new Date(travelRequest.fecha_regreso).toLocaleDateString('es-CO');
-    ws.getCell('I7').value = `${fIda} — ${fReg}`;
+    info.push(['PERIODO:', `${fIda} — ${fReg}`]);
+    info.push(['CONSECUTIVO:', travelRequest.consecutivo]);
   }
+  if (motivo && !travelRequest) info.push(['MOTIVO:', motivo]);
 
-  if (legalization.ciudades_visitadas) {
-    ws.getCell('B8').value = 'CIUDADES:';
-    ws.getCell('B8').font = { name: 'Arial', bold: true, size: 9 };
-    ws.getCell('C8').value = legalization.ciudades_visitadas;
-  }
+  let infoRow = 4;
+  const midCol = Math.max(3, Math.ceil(totalCols / 2));
+  info.forEach(([label, val], i) => {
+    const r = infoRow + Math.floor(i / 2);
+    const c = i % 2 === 0 ? 1 : midCol;
+    ws.getCell(r, c).value = label;
+    ws.getCell(r, c).font = boldFont9;
+    ws.getCell(r, c + 1).value = val;
+    ws.getCell(r, c + 1).font = normalFont9;
+  });
 
-  // ── TABLE HEADER ──
-  const hRow = 10;
-  const headers = ['#', 'FECHA', 'ESTABLECIM.', 'ALOJAMIENTO', 'ALIMENTACIÓN', 'TRANSPORTES', 'PEAJES', 'PARQUEADEROS', 'TAXIS', 'IMPREVISTOS', 'G. REPRESENT.', 'OTROS', 'TOTAL DÍA', 'MEDIO PAGO'];
-  headers.forEach((h, i) => {
-    const cell = ws.getCell(hRow, i + 1);
-    cell.value = h;
+  // ── MATRIX TABLE ──
+  const matrixStart = infoRow + Math.ceil(info.length / 2) + 2;
+
+  // Header row: "CONCEPTO" | date1 | date2 | ... | TOTAL
+  ws.getCell(matrixStart, 1).value = 'CONCEPTO';
+  ws.getCell(matrixStart, 1).font = headerFont;
+  ws.getCell(matrixStart, 1).fill = headerFill;
+  ws.getCell(matrixStart, 1).border = borderThin;
+  ws.getCell(matrixStart, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  uniqueDates.forEach((d, i) => {
+    const cell = ws.getCell(matrixStart, i + 2);
+    cell.value = new Date(d + 'T12:00:00');
+    cell.numFmt = 'dd/mm';
     cell.font = headerFont;
     cell.fill = headerFill;
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = borderThin;
-  });
-  ws.getRow(hRow).height = 30;
-
-  // ── GROUP EXPENSES BY DATE ──
-  const sorted = [...expenses].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-
-  // Group by date
-  const byDate = {};
-  sorted.forEach(exp => {
-    const fecha = exp.fecha;
-    if (!byDate[fecha]) byDate[fecha] = [];
-    byDate[fecha].push(exp);
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
   });
 
-  const dates = Object.keys(byDate).sort();
-  let currentRow = hRow + 1;
+  const totalCol = uniqueDates.length + 2;
+  ws.getCell(matrixStart, totalCol).value = 'TOTAL';
+  ws.getCell(matrixStart, totalCol).font = headerFont;
+  ws.getCell(matrixStart, totalCol).fill = headerFill;
+  ws.getCell(matrixStart, totalCol).border = borderThin;
+  ws.getCell(matrixStart, totalCol).alignment = { horizontal: 'center' };
+  ws.getRow(matrixStart).height = 24;
 
-  // For each date, create rows for each expense
-  dates.forEach(fecha => {
-    const dayExpenses = byDate[fecha];
+  // Category rows
+  CAT_ROWS.forEach((cat, ci) => {
+    const r = matrixStart + 1 + ci;
+    ws.getCell(r, 1).value = cat.label;
+    ws.getCell(r, 1).font = boldFont9;
+    ws.getCell(r, 1).fill = catFill;
+    ws.getCell(r, 1).border = borderThin;
 
-    dayExpenses.forEach((exp, idx) => {
-      const valor = parseFloat(exp.valor || 0);
-      const cat = CATS.find(c => c.key === exp.categoria);
-      const catCol = cat ? cat.col : 12; // default to "Otros"
-
-      ws.getCell(currentRow, 1).value = currentRow - hRow;
-      ws.getCell(currentRow, 1).alignment = { horizontal: 'center' };
-      ws.getCell(currentRow, 2).value = new Date(fecha + 'T12:00:00');
-      ws.getCell(currentRow, 2).numFmt = 'dd/mm/yyyy';
-      ws.getCell(currentRow, 3).value = exp.establecimiento || '';
-      ws.getCell(currentRow, 3).font = { name: 'Arial', size: 8 };
-
-      // Put value in the correct category column
-      for (const c of CATS) {
-        ws.getCell(currentRow, c.col).value = 0;
-        ws.getCell(currentRow, c.col).numFmt = currencyFmt;
-      }
-      ws.getCell(currentRow, catCol).value = valor;
-      ws.getCell(currentRow, catCol).numFmt = currencyFmt;
-
-      // Total día = sum of all category columns for this row
-      const colLetters = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-      ws.getCell(currentRow, 13).value = { formula: colLetters.map(l => `${l}${currentRow}`).join('+') };
-      ws.getCell(currentRow, 13).numFmt = currencyFmt;
-
-      // Medio de pago
-      const pagoLabels = { efectivo: 'Efectivo', tarjeta_debito: 'T. Débito', tarjeta_credito: 'T. Crédito' };
-      ws.getCell(currentRow, 14).value = pagoLabels[exp.medio_pago] || exp.medio_pago || '';
-
-      // Borders and font
-      for (let c = 1; c <= 14; c++) {
-        ws.getCell(currentRow, c).border = borderThin;
-        if (!ws.getCell(currentRow, c).font?.name) ws.getCell(currentRow, c).font = { name: 'Arial', size: 9 };
-      }
-      // Alternate row color
-      if ((currentRow - hRow) % 2 === 0) {
-        for (let c = 1; c <= 14; c++) {
-          ws.getCell(currentRow, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
-        }
-      }
-
-      currentRow++;
+    let rowTotal = 0;
+    uniqueDates.forEach((d, di) => {
+      const val = matrix[cat.key][d] || 0;
+      rowTotal += val;
+      const cell = ws.getCell(r, di + 2);
+      cell.value = val;
+      cell.numFmt = currencyFmt;
+      cell.font = normalFont9;
+      cell.border = borderThin;
+      cell.alignment = { horizontal: 'right' };
+      if (val > 0) cell.font = { ...normalFont9, bold: true };
     });
+    // Total column
+    ws.getCell(r, totalCol).value = rowTotal;
+    ws.getCell(r, totalCol).numFmt = currencyFmt;
+    ws.getCell(r, totalCol).font = { name: 'Arial', bold: true, size: 10 };
+    ws.getCell(r, totalCol).border = borderThin;
+    ws.getCell(r, totalCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3E0' } };
   });
 
-  // ── TOTALS ROW ──
-  const totalsRow = currentRow;
-  const dataStart = hRow + 1;
-  const dataEnd = currentRow - 1;
+  // TOTAL DE GASTOS row
+  const totalRow = matrixStart + 1 + CAT_ROWS.length;
+  ws.getCell(totalRow, 1).value = 'TOTAL DE GASTOS';
+  ws.getCell(totalRow, 1).font = { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFF' } };
+  ws.getCell(totalRow, 1).fill = headerFill;
+  ws.getCell(totalRow, 1).border = borderThin;
 
-  ws.getCell(totalsRow, 2).value = 'TOTALES';
-  ws.getCell(totalsRow, 2).font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell(totalsRow, 2).alignment = { horizontal: 'center' };
-
-  // Sum each category column
-  const catCols = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]; // D through M
-  const colLetter = (n) => String.fromCharCode(64 + n);
-  catCols.forEach(c => {
-    ws.getCell(totalsRow, c).value = { formula: `SUM(${colLetter(c)}${dataStart}:${colLetter(c)}${dataEnd})` };
-    ws.getCell(totalsRow, c).numFmt = currencyFmt;
+  uniqueDates.forEach((d, di) => {
+    let dayTotal = 0;
+    CAT_ROWS.forEach(cat => { dayTotal += matrix[cat.key][d] || 0; });
+    const cell = ws.getCell(totalRow, di + 2);
+    cell.value = dayTotal;
+    cell.numFmt = currencyFmt;
+    cell.font = { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    cell.fill = headerFill;
+    cell.border = borderThin;
+    cell.alignment = { horizontal: 'right' };
   });
 
-  for (let c = 1; c <= 14; c++) {
-    ws.getCell(totalsRow, c).border = borderThin;
-    ws.getCell(totalsRow, c).font = { name: 'Arial', bold: true, size: 9 };
-    ws.getCell(totalsRow, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightBlue } };
-  }
+  // Grand total
+  const grandTotal = parseFloat(legalization.gasto_real_total || 0);
+  ws.getCell(totalRow, totalCol).value = grandTotal;
+  ws.getCell(totalRow, totalCol).numFmt = currencyFmt;
+  ws.getCell(totalRow, totalCol).font = { name: 'Arial', bold: true, size: 12, color: { argb: 'FFFFFF' } };
+  ws.getCell(totalRow, totalCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D32F2F' } };
+  ws.getCell(totalRow, totalCol).border = borderThin;
 
-  // ── SUMMARY: Anticipo vs Gasto Real ──
-  const sumRow = totalsRow + 2;
-  const gastoTotal = parseFloat(legalization.gasto_real_total || 0);
+  // ── ANTICIPO SUMMARY ──
+  const sumRow = totalRow + 2;
   const anticipoVal = parseFloat(legalization.valor_anticipo || 0);
   const favorEmpresa = parseFloat(legalization.pago_favor_empresa || 0);
   const favorEmpleado = parseFloat(legalization.pago_favor_empleado || 0);
 
-  const summaryItems = [
-    ['GASTO REAL TOTAL', gastoTotal, blue],
-    ['VALOR ANTICIPO', anticipoVal, null],
-    ['A FAVOR DE LA EMPRESA', favorEmpresa, 'CC0000'],
-    ['A FAVOR DEL EMPLEADO', favorEmpleado, '00802B'],
+  const summary = [
+    ['TOTAL GASTOS REALES', grandTotal, blue],
+    ['VALOR ANTICIPO RECIBIDO', anticipoVal, '555555'],
+    ['SALDO A FAVOR DE LA EMPRESA (Empleado debe devolver)', favorEmpresa, 'CC0000'],
+    ['SALDO A FAVOR DEL EMPLEADO (Empresa debe reembolsar)', favorEmpleado, '00802B'],
   ];
 
-  summaryItems.forEach(([label, val, color], i) => {
+  summary.forEach(([label, val, color], i) => {
     const r = sumRow + i;
-    ws.mergeCells(r, 10, r, 12);
-    ws.getCell(r, 10).value = label;
-    ws.getCell(r, 10).font = { name: 'Arial', bold: true, size: 9 };
-    ws.getCell(r, 10).alignment = { horizontal: 'right' };
-    ws.getCell(r, 13).value = val;
-    ws.getCell(r, 13).numFmt = currencyFmt;
-    ws.getCell(r, 13).font = { name: 'Arial', bold: true, size: i === 0 ? 12 : 10, color: color ? { argb: color } : undefined };
-    ws.getCell(r, 13).border = borderThin;
+    ws.mergeCells(r, 1, r, totalCol - 1);
+    ws.getCell(r, 1).value = label;
+    ws.getCell(r, 1).font = { name: 'Arial', bold: true, size: i === 0 ? 10 : 9 };
+    ws.getCell(r, 1).alignment = { horizontal: 'right' };
+    ws.getCell(r, 1).border = borderThin;
+    ws.getCell(r, totalCol).value = val;
+    ws.getCell(r, totalCol).numFmt = currencyFmt;
+    ws.getCell(r, totalCol).font = { name: 'Arial', bold: true, size: i === 0 ? 12 : 10, color: color ? { argb: color } : undefined };
+    ws.getCell(r, totalCol).border = borderThin;
   });
+
+  // ── SIGNATURES ──
+  const sigRow = sumRow + summary.length + 2;
+  ws.getCell(sigRow, 1).value = 'FIRMA COLABORADOR:';
+  ws.getCell(sigRow, 1).font = boldFont9;
+  ws.getCell(sigRow + 2, 1).value = 'REVISADO (LÍDER REGIONAL):';
+  ws.getCell(sigRow + 2, 1).font = boldFont9;
+  ws.getCell(sigRow + 2, 3).value = 'NOMBRE:';
+  ws.getCell(sigRow + 2, 5).value = 'FIRMA:';
+  ws.getCell(sigRow + 4, 1).value = 'APROBADO (GERENTE VENTAS):';
+  ws.getCell(sigRow + 4, 1).font = boldFont9;
+  ws.getCell(sigRow + 4, 3).value = 'NOMBRE:';
+  ws.getCell(sigRow + 4, 5).value = 'FIRMA:';
+  ws.getCell(sigRow + 6, 1).value = 'OBSERVACIONES AUDITORIA (CONTROL INTERNO):';
+  ws.getCell(sigRow + 6, 1).font = boldFont9;
 
   // ── DETAIL SHEET ──
   const ws2 = wb.addWorksheet('DETALLE GASTOS');
   ws2.columns = [
-    { width: 5 }, { width: 13 }, { width: 16 }, { width: 25 }, { width: 15 }, { width: 15 }, { width: 14 }, { width: 12 }, { width: 14 }, { width: 13 },
+    { width: 5 }, { width: 13 }, { width: 16 }, { width: 25 }, { width: 15 }, { width: 15 }, { width: 14 }, { width: 12 }, { width: 14 }, { width: 13 }, { width: 15 },
   ];
-
-  const dHeaders = ['#', 'FECHA', 'CATEGORÍA', 'ESTABLECIMIENTO', 'NIT', 'No. FACTURA', 'VALOR', 'IVA', 'TOTAL', 'MEDIO PAGO'];
+  const dHeaders = ['#', 'FECHA', 'CATEGORÍA', 'ESTABLECIMIENTO', 'NIT', 'No. FACTURA', 'VALOR', 'IVA', 'TOTAL', 'MEDIO PAGO', 'CIUDAD'];
   dHeaders.forEach((h, i) => {
     const cell = ws2.getCell(1, i + 1);
     cell.value = h;
@@ -434,26 +448,12 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     ws2.getCell(r, 9).value = valor + iva;
     ws2.getCell(r, 9).numFmt = currencyFmt;
     ws2.getCell(r, 10).value = pagoLabelsMap[exp.medio_pago] || '';
-    for (let c = 1; c <= 10; c++) {
+    ws2.getCell(r, 11).value = exp.ciudad || legalization.ciudades_visitadas || '';
+    for (let c = 1; c <= 11; c++) {
       ws2.getCell(r, c).border = borderThin;
-      ws2.getCell(r, c).font = { name: 'Arial', size: 9 };
+      ws2.getCell(r, c).font = normalFont9;
     }
   });
-
-  // ── SIGNATURES ──
-  const sigRow = sumRow + 7;
-  ws.getCell(sigRow, 2).value = 'FIRMA VENDEDOR:';
-  ws.getCell(sigRow, 2).font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell(sigRow + 2, 2).value = 'REVISADO (LÍDER REGIONAL):';
-  ws.getCell(sigRow + 2, 2).font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell(sigRow + 2, 6).value = 'NOMBRE:';
-  ws.getCell(sigRow + 2, 9).value = 'FIRMA:';
-  ws.getCell(sigRow + 4, 2).value = 'APROBADO (GERENTE VENTAS):';
-  ws.getCell(sigRow + 4, 2).font = { name: 'Arial', bold: true, size: 9 };
-  ws.getCell(sigRow + 4, 6).value = 'NOMBRE:';
-  ws.getCell(sigRow + 4, 9).value = 'FIRMA:';
-  ws.getCell(sigRow + 6, 2).value = 'OBSERVACIONES AUDITORIA (CONTROL INTERNO):';
-  ws.getCell(sigRow + 6, 2).font = { name: 'Arial', bold: true, size: 9 };
 
   ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
