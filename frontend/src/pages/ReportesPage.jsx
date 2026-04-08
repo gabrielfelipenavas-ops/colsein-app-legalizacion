@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, DollarSign, Download, FileText, ChevronRight, TrendingUp } from 'lucide-react';
-import { reportAPI, kmAPI } from '../services/api';
+import { reportAPI, kmAPI, legalizationAPI } from '../services/api';
 import { fmt, fmtNum, monthName } from '../utils/helpers';
 
 export default function ReportesPage() {
   const [dashboard, setDashboard] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [legalizations, setLegalizations] = useState([]);
 
   useEffect(() => {
     reportAPI.dashboard().then(r => setDashboard(r.data)).catch(() => {});
+    legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {});
   }, []);
 
   const report = dashboard?.current_report;
@@ -30,6 +32,22 @@ export default function ReportesPage() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `Registro_Transporte.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al generar Excel'); }
+    setDownloading(false);
+  };
+
+  const downloadLegExcel = async () => {
+    if (legalizations.length === 0) return;
+    const latest = legalizations[0];
+    setDownloading(true);
+    try {
+      const { data } = await reportAPI.downloadLegalizacionExcel(latest.id);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Legalizacion_Gastos_${latest.id}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch { alert('Error al generar Excel'); }
@@ -107,9 +125,7 @@ export default function ReportesPage() {
         <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><Download size={16} className="text-amber-600" /> Generar Documentos</h3>
         {[
           { label: 'Registro de Medios de Transporte (Excel)', desc: 'Formato oficial V.08 con tarifas vigentes', action: downloadExcel, enabled: !!report },
-          { label: 'Solicitud de Anticipo (Excel)', desc: 'Formato oficial con presupuesto', enabled: false },
-          { label: 'Legalización de Gastos (Excel)', desc: 'Desglose por día y categoría', enabled: false },
-          { label: 'Compilación de Soportes (PDF)', desc: 'Todas las facturas del periodo', enabled: false },
+          { label: 'Legalización de Gastos (Excel)', desc: 'Desglose por día y categoría', action: downloadLegExcel, enabled: legalizations.length > 0 },
         ].map((doc, i) => (
           <button key={i} onClick={doc.action} disabled={!doc.enabled || downloading} className="w-full flex items-center gap-3 py-3 border-b border-slate-100 last:border-0 text-left disabled:opacity-40 hover:bg-slate-50 transition-colors rounded-lg px-1">
             <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">

@@ -186,4 +186,186 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
   return wb;
 }
 
-module.exports = { generateKilometrageExcel };
+async function generateLegalizationExcel(legalization, expenses, user, travelRequest) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('LEGALIZACION');
+
+  ws.columns = [
+    { width: 5 },   // A
+    { width: 14 },  // B Fecha
+    { width: 18 },  // C Categoría
+    { width: 25 },  // D Establecimiento
+    { width: 15 },  // E NIT
+    { width: 15 },  // F No. Factura
+    { width: 16 },  // G Valor
+    { width: 14 },  // H IVA
+    { width: 16 },  // I Total
+    { width: 14 },  // J Medio Pago
+  ];
+
+  const blue = '004A7C';
+  const lightBlue = 'E8F4FD';
+  const headerFont = { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFF' } };
+  const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } };
+  const borderThin = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  const currencyFmt = '$#,##0';
+
+  // ── HEADER ──
+  ws.mergeCells('B2:E3');
+  ws.getCell('B2').value = 'LEGALIZACIÓN DE GASTOS DE VIAJE\nCOLSEIN S.A.S. — NIT 800.002.030';
+  ws.getCell('B2').font = { name: 'Arial', bold: true, size: 12, color: { argb: blue } };
+  ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+  // User info
+  ws.getCell('B5').value = 'NOMBRE:';
+  ws.getCell('B5').font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell('C5').value = user.nombre;
+  ws.getCell('C5').font = { name: 'Arial', size: 9 };
+
+  ws.getCell('B6').value = 'CÉDULA:';
+  ws.getCell('B6').font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell('C6').value = user.cedula;
+
+  ws.getCell('B7').value = 'ZONA:';
+  ws.getCell('B7').font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell('C7').value = user.zona || '';
+
+  if (travelRequest) {
+    ws.getCell('E5').value = 'CONSECUTIVO:';
+    ws.getCell('E5').font = { name: 'Arial', bold: true, size: 9 };
+    ws.getCell('F5').value = travelRequest.consecutivo;
+
+    ws.getCell('E6').value = 'DESTINO:';
+    ws.getCell('E6').font = { name: 'Arial', bold: true, size: 9 };
+    ws.getCell('F6').value = travelRequest.ciudad_destino;
+
+    ws.getCell('E7').value = 'PERIODO:';
+    ws.getCell('E7').font = { name: 'Arial', bold: true, size: 9 };
+    const fIda = new Date(travelRequest.fecha_ida).toLocaleDateString('es-CO');
+    const fReg = new Date(travelRequest.fecha_regreso).toLocaleDateString('es-CO');
+    ws.getCell('F7').value = `${fIda} — ${fReg}`;
+  }
+
+  if (legalization.ciudades_visitadas) {
+    ws.getCell('B8').value = 'CIUDADES:';
+    ws.getCell('B8').font = { name: 'Arial', bold: true, size: 9 };
+    ws.getCell('C8').value = legalization.ciudades_visitadas;
+  }
+
+  // ── TABLE HEADER ──
+  const headerRow = 10;
+  const headers = ['#', 'FECHA', 'CATEGORÍA', 'ESTABLECIMIENTO', 'NIT', 'No. FACTURA', 'VALOR', 'IVA', 'TOTAL', 'MEDIO PAGO'];
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(headerRow, i + 1);
+    cell.value = h;
+    cell.font = headerFont;
+    cell.fill = headerFill;
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = borderThin;
+  });
+  ws.getRow(headerRow).height = 24;
+
+  const catLabels = {
+    alimentacion: 'Alimentación', alojamiento: 'Alojamiento', transportes: 'Transportes',
+    imprevistos: 'Imprevistos', representacion: 'G. Representación', peaje: 'Peaje',
+    parqueadero: 'Parqueadero', taxi: 'Taxi', otro: 'Otro',
+  };
+  const pagoLabels = {
+    efectivo: 'Efectivo', tarjeta_debito: 'T. Débito', tarjeta_credito: 'T. Crédito',
+  };
+
+  // ── DATA ROWS ──
+  const sorted = [...expenses].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  sorted.forEach((exp, i) => {
+    const row = headerRow + 1 + i;
+    const valor = parseFloat(exp.valor || 0);
+    const iva = parseFloat(exp.iva || 0);
+
+    ws.getCell(row, 1).value = i + 1;
+    ws.getCell(row, 1).alignment = { horizontal: 'center' };
+    ws.getCell(row, 2).value = new Date(exp.fecha);
+    ws.getCell(row, 2).numFmt = 'dd/mm/yyyy';
+    ws.getCell(row, 3).value = catLabels[exp.categoria] || exp.categoria;
+    ws.getCell(row, 4).value = exp.establecimiento || '';
+    ws.getCell(row, 5).value = exp.nit_establecimiento || '';
+    ws.getCell(row, 6).value = exp.numero_factura || '';
+    ws.getCell(row, 7).value = valor;
+    ws.getCell(row, 7).numFmt = currencyFmt;
+    ws.getCell(row, 8).value = iva;
+    ws.getCell(row, 8).numFmt = currencyFmt;
+    ws.getCell(row, 9).value = valor + iva;
+    ws.getCell(row, 9).numFmt = currencyFmt;
+    ws.getCell(row, 10).value = pagoLabels[exp.medio_pago] || exp.medio_pago || '';
+
+    for (let c = 1; c <= 10; c++) {
+      ws.getCell(row, c).border = borderThin;
+      ws.getCell(row, c).font = { name: 'Arial', size: 9 };
+    }
+    if (i % 2 === 0) {
+      for (let c = 1; c <= 10; c++) {
+        ws.getCell(row, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+      }
+    }
+  });
+
+  // ── TOTALS ──
+  const totalsRow = headerRow + 1 + sorted.length;
+  ws.getCell(totalsRow, 3).value = 'TOTALES';
+  ws.getCell(totalsRow, 3).font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell(totalsRow, 3).alignment = { horizontal: 'center' };
+
+  const dataStart = headerRow + 1;
+  const dataEnd = headerRow + sorted.length;
+  ws.getCell(totalsRow, 7).value = { formula: `SUM(G${dataStart}:G${dataEnd})` };
+  ws.getCell(totalsRow, 7).numFmt = currencyFmt;
+  ws.getCell(totalsRow, 8).value = { formula: `SUM(H${dataStart}:H${dataEnd})` };
+  ws.getCell(totalsRow, 8).numFmt = currencyFmt;
+  ws.getCell(totalsRow, 9).value = { formula: `SUM(I${dataStart}:I${dataEnd})` };
+  ws.getCell(totalsRow, 9).numFmt = currencyFmt;
+
+  for (let c = 1; c <= 10; c++) {
+    ws.getCell(totalsRow, c).border = borderThin;
+    ws.getCell(totalsRow, c).font = { ...ws.getCell(totalsRow, c).font, bold: true };
+    ws.getCell(totalsRow, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightBlue } };
+  }
+
+  // ── SUMMARY ──
+  const sumRow = totalsRow + 2;
+  const gastoTotal = parseFloat(legalization.gasto_real_total || 0);
+  const anticipoVal = parseFloat(legalization.valor_anticipo || 0);
+  const favorEmpresa = parseFloat(legalization.pago_favor_empresa || 0);
+  const favorEmpleado = parseFloat(legalization.pago_favor_empleado || 0);
+
+  const summaryItems = [
+    ['GASTO REAL TOTAL', gastoTotal],
+    ['VALOR ANTICIPO', anticipoVal],
+    ['A FAVOR DE LA EMPRESA', favorEmpresa],
+    ['A FAVOR DEL EMPLEADO', favorEmpleado],
+  ];
+
+  summaryItems.forEach(([label, val], i) => {
+    const r = sumRow + i;
+    ws.mergeCells(r, 7, r, 8);
+    ws.getCell(r, 7).value = label;
+    ws.getCell(r, 7).font = { name: 'Arial', bold: true, size: 9 };
+    ws.getCell(r, 7).alignment = { horizontal: 'right' };
+    ws.getCell(r, 9).value = val;
+    ws.getCell(r, 9).numFmt = currencyFmt;
+    ws.getCell(r, 9).font = { name: 'Arial', bold: true, size: i === 0 ? 12 : 10, color: i === 0 ? { argb: blue } : undefined };
+  });
+
+  // ── SIGNATURES ──
+  const sigRow = sumRow + 6;
+  ws.getCell(sigRow, 2).value = 'FIRMA VENDEDOR:';
+  ws.getCell(sigRow, 2).font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell(sigRow + 2, 2).value = 'REVISADO (LÍDER REGIONAL):';
+  ws.getCell(sigRow + 2, 2).font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell(sigRow + 4, 2).value = 'APROBADO (GERENTE VENTAS):';
+  ws.getCell(sigRow + 4, 2).font = { name: 'Arial', bold: true, size: 9 };
+
+  ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+
+  return wb;
+}
+
+module.exports = { generateKilometrageExcel, generateLegalizationExcel };

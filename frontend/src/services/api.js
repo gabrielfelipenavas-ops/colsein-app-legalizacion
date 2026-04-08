@@ -82,10 +82,21 @@ export const clientAPI = {
   },
 };
 
+// ── LEGALIZATIONS ──
+export const legalizationAPI = {
+  list: () => api.get('/legalizations'),
+  get: (id) => api.get(`/legalizations/${id}`),
+  create: (data) => api.post('/legalizations', data),
+  updateExpenses: (id, expense_ids) => api.put(`/legalizations/${id}/expenses`, { expense_ids }),
+  submit: (id) => api.post(`/legalizations/${id}/submit`),
+  approve: (id, action, comentarios) => api.post(`/legalizations/${id}/approve`, { action, comentarios }),
+};
+
 // ── REPORTS ──
 export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),
   downloadKmExcel: (reportId) => api.get(`/reports/kilometraje/${reportId}/excel`, { responseType: 'blob' }),
+  downloadLegalizacionExcel: (legId) => api.get(`/reports/legalizacion/${legId}/excel`, { responseType: 'blob' }),
 };
 
 // ── CONFIG ──

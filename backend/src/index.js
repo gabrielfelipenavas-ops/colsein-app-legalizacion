@@ -30,6 +30,7 @@ app.use('/api/kilometraje', require('./routes/kilometraje'));
 app.use('/api/anticipos', require('./routes/anticipos'));
 app.use('/api/expenses', require('./routes/expenses'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/legalizations', require('./routes/legalizations'));
 app.use('/api/config', require('./routes/config'));
 
 // Health check
