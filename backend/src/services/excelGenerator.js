@@ -457,6 +457,72 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
 
   ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
+  // ── SOPORTES SHEET (Invoice photos) ──
+  const fs = require('fs');
+  const uploadDir = process.env.UPLOAD_DIR || './uploads';
+  const expensesWithImages = sorted.filter(e => e.imagen_url);
+
+  if (expensesWithImages.length > 0) {
+    const ws3 = wb.addWorksheet('SOPORTES');
+    ws3.getColumn(1).width = 5;
+    ws3.getColumn(2).width = 50;
+    ws3.getColumn(3).width = 20;
+    ws3.getColumn(4).width = 15;
+    ws3.getColumn(5).width = 15;
+
+    ws3.getCell(1, 1).value = 'EVIDENCIAS / SOPORTES DE FACTURAS';
+    ws3.getCell(1, 1).font = { name: 'Arial', bold: true, size: 12, color: { argb: blue } };
+    ws3.mergeCells(1, 1, 1, 5);
+    ws3.getCell(1, 1).alignment = { horizontal: 'center' };
+
+    let imgRow = 3;
+    for (const exp of expensesWithImages) {
+      // Header for this expense
+      ws3.getCell(imgRow, 1).value = `#${sorted.indexOf(exp) + 1}`;
+      ws3.getCell(imgRow, 1).font = boldFont9;
+      ws3.getCell(imgRow, 2).value = `${catLabels[exp.categoria] || exp.categoria} — ${exp.establecimiento || 'Sin nombre'}`;
+      ws3.getCell(imgRow, 2).font = boldFont9;
+      ws3.getCell(imgRow, 3).value = new Date(exp.fecha + 'T12:00:00');
+      ws3.getCell(imgRow, 3).numFmt = 'dd/mm/yyyy';
+      ws3.getCell(imgRow, 4).value = parseFloat(exp.valor || 0);
+      ws3.getCell(imgRow, 4).numFmt = currencyFmt;
+      ws3.getCell(imgRow, 4).font = boldFont9;
+      imgRow++;
+
+      // Try to embed the image
+      const imgPath = exp.imagen_url?.startsWith('/uploads/')
+        ? path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''))
+        : null;
+
+      if (imgPath && fs.existsSync(imgPath)) {
+        const ext = path.extname(imgPath).toLowerCase().replace('.', '');
+        if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) {
+          try {
+            const imgId = wb.addImage({ filename: imgPath, extension: ext === 'jpg' ? 'jpeg' : ext });
+            ws3.addImage(imgId, {
+              tl: { col: 1, row: imgRow - 1 },
+              ext: { width: 350, height: 250 },
+            });
+            // Reserve rows for the image
+            for (let r = 0; r < 14; r++) ws3.getRow(imgRow + r).height = 18;
+            imgRow += 15;
+          } catch (imgErr) {
+            ws3.getCell(imgRow, 2).value = '[Error al cargar imagen]';
+            imgRow += 2;
+          }
+        } else {
+          ws3.getCell(imgRow, 2).value = `[Archivo PDF: ${path.basename(imgPath)}]`;
+          ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9 };
+          imgRow += 2;
+        }
+      } else {
+        ws3.getCell(imgRow, 2).value = exp.observaciones?.includes('[SIN SOPORTE') ? '[Sin soporte — ver justificación en observaciones]' : '[Imagen no disponible]';
+        ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9, color: { argb: '999999' } };
+        imgRow += 2;
+      }
+    }
+  }
+
   return wb;
 }
 

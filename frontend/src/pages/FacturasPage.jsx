@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign } from 'lucide-react';
+import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle } from 'lucide-react';
 import { expenseAPI } from '../services/api';
 import { fmt } from '../utils/helpers';
 
@@ -31,14 +31,18 @@ const emptyForm = {
   direccion: '',
   valor: '',
   iva: '',
+  propina: '',
   medio_pago: 'efectivo',
   numero_factura: '',
   cufe: '',
   observaciones: '',
+  sin_soporte: false,
+  justificacion_sin_soporte: '',
 };
 
 export default function FacturasPage() {
   const fileRef = useRef(null);
+  const manualFileRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
@@ -48,6 +52,7 @@ export default function FacturasPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [expenses, setExpenses] = useState([]);
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => { loadExpenses(); }, []);
 
@@ -62,18 +67,30 @@ export default function FacturasPage() {
     const f = e.target.files?.[0];
     if (!f) return;
     setFile(f);
-    setPreview(URL.createObjectURL(f));
+    if (f.type === 'application/pdf') {
+      setPreview(null); // Can't preview PDFs inline
+    } else {
+      setPreview(URL.createObjectURL(f));
+    }
     setProcessing(true);
     setResult(null);
     setShowManual(false);
     setSaved(false);
-    try {
-      const { data } = await expenseAPI.ocr(f);
-      setResult(data.ocr_data);
-      // Auto-fill form with OCR data
-      fillFromOCR(data.ocr_data, false);
-    } catch {
-      setResult({ error: 'No se pudo procesar. Ingresa datos manualmente.' });
+    setValidationError('');
+
+    // Only OCR for images, not PDFs
+    if (f.type.startsWith('image/')) {
+      try {
+        const { data } = await expenseAPI.ocr(f);
+        setResult(data.ocr_data);
+        fillFromOCR(data.ocr_data, false);
+      } catch {
+        setResult({ error: 'No se pudo procesar. Ingresa datos manualmente.' });
+      }
+    } else {
+      // PDF — go straight to manual form
+      setResult(null);
+      setShowManual(true);
     }
     setProcessing(false);
   };
@@ -102,12 +119,46 @@ export default function FacturasPage() {
     if (openForm) setShowManual(true);
   };
 
+  const valorNeto = () => {
+    const val = parseFloat(form.valor) || 0;
+    const propina = parseFloat(form.propina) || 0;
+    return Math.max(0, val - propina);
+  };
+
+  const validate = () => {
+    if (!form.valor || parseFloat(form.valor) <= 0) return 'Ingresa el valor del gasto';
+    if (!file && !form.sin_soporte) return 'Debes adjuntar foto/PDF de la factura o marcar "Sin soporte" y justificar';
+    if (form.sin_soporte && !form.justificacion_sin_soporte.trim()) return 'Debes justificar por qué no tienes el soporte';
+    return '';
+  };
+
   const handleSave = async () => {
-    if (!form.valor || parseFloat(form.valor) <= 0) return alert('Ingresa el valor del gasto');
+    const err = validate();
+    if (err) { setValidationError(err); return; }
+    setValidationError('');
     setSaving(true);
     try {
       const fd = new FormData();
-      Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+      // Send valor neto (minus propina) as the actual expense value
+      const propina = parseFloat(form.propina) || 0;
+      const entries = Object.entries(form);
+      entries.forEach(([k, v]) => {
+        if (k === 'sin_soporte') return;
+        if (k === 'valor' && propina > 0) {
+          fd.append('valor', String(valorNeto()));
+          return;
+        }
+        if (k === 'propina') return; // stored in observaciones
+        if (k === 'justificacion_sin_soporte') return;
+        if (v) fd.append(k, v);
+      });
+
+      // Add propina and justification info to observaciones
+      let obs = form.observaciones || '';
+      if (propina > 0) obs = `[Propina/Servicio: $${propina}] ${obs}`.trim();
+      if (form.sin_soporte) obs = `[SIN SOPORTE: ${form.justificacion_sin_soporte}] ${obs}`.trim();
+      if (obs) fd.append('observaciones', obs);
+
       if (file) fd.append('imagen', file);
       await expenseAPI.create(fd);
       setSaved(true);
@@ -138,6 +189,7 @@ export default function FacturasPage() {
     setPreview(null);
     setFile(null);
     setSaved(false);
+    setValidationError('');
   };
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -152,9 +204,9 @@ export default function FacturasPage() {
       )}
 
       <div className="card mx-4">
-        <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Camera size={16} className="text-orange-500" /> Escaneo Inteligente de Facturas</h3>
-        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Toma una foto de cualquier factura o ingresa los datos manualmente.</p>
-        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+        <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Camera size={16} className="text-orange-500" /> Registro de Facturas y Gastos</h3>
+        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Escanea una factura (foto o PDF) o ingresa los datos manualmente.</p>
+        <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} className="hidden" />
         <div className="flex gap-2">
           <button onClick={() => fileRef.current?.click()} className="btn-primary flex-1 !bg-amber-500 hover:!bg-amber-600">
             <Camera size={18} /> Escanear
@@ -201,6 +253,22 @@ export default function FacturasPage() {
         </div>
       )}
 
+      {/* PDF uploaded without preview */}
+      {file && !preview && !showManual && !processing && (
+        <div className="card mx-4 mt-3">
+          <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+            <FileText size={24} className="text-blue-500" />
+            <div>
+              <p className="text-sm font-bold text-blue-700">{file.name}</p>
+              <p className="text-xs text-blue-500">PDF cargado correctamente</p>
+            </div>
+          </div>
+          <button onClick={() => setShowManual(true)} className="btn-primary w-full mt-3 !py-2 !text-xs">
+            <Edit size={14} /> Ingresar datos de la factura
+          </button>
+        </div>
+      )}
+
       {showManual && (
         <div className="card mx-4 mt-3">
           <div className="flex items-center justify-between mb-3">
@@ -216,6 +284,20 @@ export default function FacturasPage() {
 
           {preview && (
             <img src={preview} alt="Preview" className="w-full rounded-xl max-h-32 object-cover mb-3" />
+          )}
+
+          {file && !preview && (
+            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-xl mb-3">
+              <FileText size={16} className="text-blue-500" />
+              <span className="text-xs font-semibold text-blue-700">{file.name}</span>
+            </div>
+          )}
+
+          {validationError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3 flex items-center gap-2">
+              <AlertTriangle size={14} className="text-red-500 shrink-0" />
+              <p className="text-xs font-semibold text-red-600">{validationError}</p>
+            </div>
           )}
 
           <div className="space-y-3">
@@ -254,7 +336,7 @@ export default function FacturasPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Valor Total *</label>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Valor Total Factura *</label>
                 <input type="number" value={form.valor} onChange={e => set('valor', e.target.value)} placeholder="$0" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold" />
               </div>
               <div>
@@ -262,6 +344,23 @@ export default function FacturasPage() {
                 <input type="number" value={form.iva} onChange={e => set('iva', e.target.value)} placeholder="$0" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
               </div>
             </div>
+
+            {/* Propina/Servicio — solo para alimentación */}
+            {form.categoria === 'alimentacion' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-amber-700">Servicio / Propina (se descuenta del total)</label>
+                </div>
+                <input type="number" value={form.propina} onChange={e => set('propina', e.target.value)} placeholder="$0"
+                  className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                {(parseFloat(form.propina) || 0) > 0 && (parseFloat(form.valor) || 0) > 0 && (
+                  <div className="flex justify-between mt-2 pt-2 border-t border-amber-200">
+                    <span className="text-xs font-semibold text-amber-700">Valor neto (sin propina)</span>
+                    <span className="text-sm font-extrabold text-amber-800">{fmt(valorNeto())}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
@@ -285,12 +384,48 @@ export default function FacturasPage() {
               <textarea value={form.observaciones} onChange={e => set('observaciones', e.target.value)} placeholder="Notas adicionales (opcional)" rows={2} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm resize-none" />
             </div>
 
-            {!file && (
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Foto del soporte</label>
-                <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(URL.createObjectURL(f)); } }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-              </div>
-            )}
+            {/* Soporte de factura — OBLIGATORIO */}
+            <div className={`rounded-xl p-3 ${file ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
+              <label className="text-xs font-semibold mb-2 block ${file ? 'text-emerald-700' : 'text-red-700'}">
+                {file ? '✓ Soporte adjunto' : 'Foto o PDF de la factura *'}
+              </label>
+
+              {!file && (
+                <>
+                  <input ref={manualFileRef} type="file" accept="image/*,application/pdf" onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setFile(f);
+                      if (f.type.startsWith('image/')) setPreview(URL.createObjectURL(f));
+                    }
+                  }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white mb-2" />
+
+                  <label className="flex items-center gap-2 cursor-pointer mt-1">
+                    <input type="checkbox" checked={form.sin_soporte} onChange={e => set('sin_soporte', e.target.checked)} className="w-4 h-4 accent-red-500" />
+                    <span className="text-xs font-semibold text-red-600">No tengo el soporte</span>
+                  </label>
+
+                  {form.sin_soporte && (
+                    <div className="mt-2">
+                      <label className="text-xs font-semibold text-red-700 mb-1 block">Justificación *</label>
+                      <textarea value={form.justificacion_sin_soporte} onChange={e => set('justificacion_sin_soporte', e.target.value)}
+                        placeholder="Explica por qué no tienes la factura..." rows={2}
+                        className="w-full border border-red-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {file && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-emerald-500" />
+                    <span className="text-xs text-emerald-700 truncate max-w-[200px]">{file.name}</span>
+                  </div>
+                  <button onClick={() => { setFile(null); setPreview(null); }} className="text-xs text-red-500 font-semibold">Quitar</button>
+                </div>
+              )}
+            </div>
 
             <button onClick={handleSave} disabled={saving} className="btn-primary w-full !py-3">
               {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Guardando...</> : <><Save size={18} /> Guardar Gasto</>}
@@ -310,6 +445,7 @@ export default function FacturasPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
                     <span className="text-[10px] text-slate-400">{exp.fecha}</span>
+                    {exp.observaciones?.includes('[SIN SOPORTE') && <AlertTriangle size={12} className="text-amber-500" />}
                   </div>
                   <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
                 </div>
@@ -325,7 +461,7 @@ export default function FacturasPage() {
 
       <div className="card mx-4 mt-3">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><FileText size={16} className="text-colsein-500" /> Documentos Soportados</h3>
-        {['🧾 Tiquetes de peaje', '🅿️ Recibos de parqueadero', '🚕 Recibos de taxi / apps', '🍽️ Facturas de restaurantes', '🏨 Facturas de hotel'].map((t, i) => (
+        {['🧾 Tiquetes de peaje', '🅿️ Recibos de parqueadero', '🚕 Recibos de taxi / apps', '🍽️ Facturas de restaurantes', '🏨 Facturas de hotel', '📄 PDFs de facturas electrónicas'].map((t, i) => (
           <div key={i} className="flex items-center gap-3 py-2.5 border-b border-slate-100 last:border-0">
             <span className="text-xl">{t.split(' ')[0]}</span>
             <span className="text-sm font-semibold">{t.split(' ').slice(1).join(' ')}</span>
