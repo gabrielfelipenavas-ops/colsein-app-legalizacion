@@ -36,48 +36,120 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
   }
 });
 
-// POST /api/expenses/ocr — process receipt with Claude Vision
+// POST /api/expenses/ocr — process receipt with Tesseract.js (free, local OCR)
 router.post('/ocr', auth, upload.single('imagen'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Imagen requerida' });
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'API key de Anthropic no configurada' });
+    const Tesseract = require('tesseract.js');
+    const { data: { text } } = await Tesseract.recognize(req.file.path, 'spa', { logger: () => {} });
 
-    const fs = require('fs');
-    const imageBuffer = fs.readFileSync(req.file.path);
-    const base64 = imageBuffer.toString('base64');
-    const mediaType = req.file.mimetype;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: 'Analiza esta factura/recibo colombiano. Extrae en JSON puro (sin markdown, sin backticks): tipo_gasto (Alojamiento|Alimentación|Transportes|Imprevistos|Gastos de Representación), establecimiento, nit, direccion, fecha (YYYY-MM-DD), valor_total (número), iva (número o 0), numero_factura, cufe, medio_pago (Efectivo|Tarjeta Débito|Tarjeta Crédito), descripcion_items. Usa null si no puedes leer.' }
-          ]
-        }]
-      })
-    });
-
-    const data = await response.json();
-    const text = (data.content || []).map(i => i.text || '').join('');
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
-
+    const parsed = parseColombianReceipt(text);
     const imagePath = `/uploads/${req.file.path.split('/').slice(-2).join('/')}`;
 
-    res.json({ ocr_data: parsed, imagen_url: imagePath });
+    res.json({ ocr_data: parsed, imagen_url: imagePath, raw_text: text });
   } catch (err) {
     console.error('OCR error:', err);
     res.status(500).json({ error: 'Error al procesar la imagen' });
   }
 });
+
+// Parse Colombian receipt text into structured data
+function parseColombianReceipt(text) {
+  const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  const full = lines.join(' ');
+  const fullLower = full.toLowerCase();
+
+  // NIT
+  const nitMatch = full.match(/NIT[.:;\s]*(\d[\d.,\-]+)/i);
+  const nit = nitMatch ? nitMatch[1].replace(/\s/g, '') : null;
+
+  // Establecimiento — usually first non-empty lines
+  let establecimiento = null;
+  for (const line of lines.slice(0, 5)) {
+    if (line.length > 3 && !line.match(/^(NIT|TEL|DIR|FAC|FEC|RES|REG|FECHA|HORA)/i) && !line.match(/^\d/)) {
+      establecimiento = line;
+      break;
+    }
+  }
+
+  // Dirección
+  const dirMatch = full.match(/DIR(?:ECCI[OÓ]N)?[.:;\s]*([^\n]{5,80})/i) ||
+                    full.match(/((?:CL|CR|KR|CALLE|CARRERA|AV|TRANS)\s*\.?\s*\d+[^\n]{3,60})/i);
+  const direccion = dirMatch ? dirMatch[1].trim() : null;
+
+  // Fecha
+  const fechaMatch = full.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/) ||
+                     full.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  let fecha = null;
+  if (fechaMatch) {
+    let [, a, b, c] = fechaMatch;
+    if (a.length === 4) {
+      fecha = `${a}-${b.padStart(2, '0')}-${c.padStart(2, '0')}`;
+    } else {
+      const year = c.length === 2 ? `20${c}` : c;
+      fecha = `${year}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
+    }
+  }
+
+  // Valor total
+  const totalPatterns = [
+    /TOTAL\s*(?:A\s*PAGAR)?[.:$\s]*\$?\s*([\d.,]+)/i,
+    /VR\.\s*TOTAL[.:$\s]*\$?\s*([\d.,]+)/i,
+    /VALOR\s*TOTAL[.:$\s]*\$?\s*([\d.,]+)/i,
+    /TOTAL[.:$\s]*\$?\s*([\d.,]+)/i,
+  ];
+  let valor_total = null;
+  for (const pat of totalPatterns) {
+    const m = full.match(pat);
+    if (m) {
+      valor_total = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+      break;
+    }
+  }
+
+  // IVA
+  const ivaMatch = full.match(/IVA[.:$\s]*\$?\s*([\d.,]+)/i) ||
+                   full.match(/I\.?\s*V\.?\s*A\.?[.:$\s]*\$?\s*([\d.,]+)/i);
+  const iva = ivaMatch ? parseFloat(ivaMatch[1].replace(/\./g, '').replace(',', '.')) : 0;
+
+  // Número de factura
+  const facMatch = full.match(/(?:FACTURA|FAC|FV|No\.|NUM)[.:;\s#]*([A-Z0-9\-]{2,20})/i);
+  const numero_factura = facMatch ? facMatch[1] : null;
+
+  // CUFE
+  const cufeMatch = full.match(/CUFE[.:;\s]*([a-f0-9\-]{20,})/i);
+  const cufe = cufeMatch ? cufeMatch[1] : null;
+
+  // Tipo de gasto
+  let tipo_gasto = null;
+  if (fullLower.match(/hotel|hospeda|alojami/)) tipo_gasto = 'Alojamiento';
+  else if (fullLower.match(/restauran|comida|almuerz|cena|desayun|menú|menu|cafeter/)) tipo_gasto = 'Alimentación';
+  else if (fullLower.match(/peaje|toll/)) tipo_gasto = 'Transportes';
+  else if (fullLower.match(/parqu|estacion/)) tipo_gasto = 'Transportes';
+  else if (fullLower.match(/taxi|uber|didi|beat|indriver|cabify/)) tipo_gasto = 'Transportes';
+  else if (fullLower.match(/gasolina|combust|tanque/)) tipo_gasto = 'Transportes';
+
+  // Medio de pago
+  let medio_pago = null;
+  if (fullLower.match(/tarjeta\s*(de\s*)?cr[eé]dito|visa|mastercard|amex/)) medio_pago = 'Tarjeta Crédito';
+  else if (fullLower.match(/tarjeta\s*(de\s*)?d[eé]bito|nequi|daviplata/)) medio_pago = 'Tarjeta Débito';
+  else if (fullLower.match(/efectivo|contado|cash/)) medio_pago = 'Efectivo';
+
+  return {
+    tipo_gasto,
+    establecimiento,
+    nit,
+    direccion,
+    fecha,
+    valor_total,
+    iva,
+    numero_factura,
+    cufe,
+    medio_pago,
+    descripcion_items: null,
+  };
+}
 
 // DELETE /api/expenses/:id
 router.delete('/:id', auth, async (req, res) => {
