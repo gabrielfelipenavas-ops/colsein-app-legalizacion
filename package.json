@@ -11,7 +11,7 @@
     "build": "cd frontend && npm run build",
     "start": "cd backend && npm start",
     "railway:build": "cd backend && npm install && cd ../frontend && npm install && npm run build",
-    "railway:start": "cd backend && npx sequelize-cli db:migrate && npm start"
+    "railway:start": "cd backend && npx sequelize-cli db:migrate; npm start"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

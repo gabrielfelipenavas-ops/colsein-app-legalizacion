@@ -55,16 +55,16 @@ async function start() {
   try {
     await db.sequelize.authenticate();
     console.log('✅ Base de datos conectada');
-    app.listen(PORT, () => {
-      console.log(`🚀 API corriendo en http://localhost:${PORT}`);
-      console.log(`📋 Endpoints: http://localhost:${PORT}/api/health`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 API corriendo en http://0.0.0.0:${PORT}`);
+      console.log(`📋 Endpoints: http://0.0.0.0:${PORT}/api/health`);
     });
   } catch (err) {
     console.error('❌ Error al conectar BD:', err.message);
     console.log('💡 Asegúrate de que PostgreSQL esté corriendo (docker-compose up -d)');
     // Start anyway for development without DB
-    app.listen(PORT, () => {
-      console.log(`⚠️  API corriendo SIN base de datos en http://localhost:${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`⚠️  API corriendo SIN base de datos en http://0.0.0.0:${PORT}`);
     });
   }
 }

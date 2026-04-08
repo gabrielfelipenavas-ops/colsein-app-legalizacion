@@ -11,23 +11,12 @@ module.exports = {
     logging: false,
   },
   production: {
-    ...(process.env.DATABASE_URL
-      ? {
-          use_env_variable: 'DATABASE_URL',
-          dialect: 'postgres',
-          dialectOptions: {
-            ssl: { require: true, rejectUnauthorized: false },
-          },
-        }
-      : {
-          username: process.env.DB_USER,
-          password: process.env.DB_PASS,
-          database: process.env.DB_NAME,
-          host: process.env.DB_HOST,
-          port: parseInt(process.env.DB_PORT || '5432'),
-        }),
+    use_env_variable: 'DATABASE_URL',
     dialect: 'postgres',
     logging: false,
+    dialectOptions: {
+      ssl: { require: true, rejectUnauthorized: false },
+    },
     pool: { max: 20, min: 5, acquire: 60000, idle: 10000 },
   },
 };
