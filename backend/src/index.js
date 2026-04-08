@@ -34,7 +34,13 @@ app.use('/api/config', require('./routes/config'));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV,
+    hasDbUrl: !!process.env.DATABASE_URL,
+    dbUrlHost: process.env.DATABASE_URL ? process.env.DATABASE_URL.split('@')[1]?.split(':')[0] : 'none',
+  });
 });
 
 // Temporary seed endpoint — DELETE AFTER USE
