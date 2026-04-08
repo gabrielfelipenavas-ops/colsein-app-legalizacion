@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
-import { Camera, FileText, CheckCircle, Edit, Upload, PlusCircle, Save, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign } from 'lucide-react';
 import { expenseAPI } from '../services/api';
+import { fmt } from '../utils/helpers';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -13,6 +14,8 @@ const CATEGORIAS = [
   { value: 'taxi', label: 'Taxi' },
   { value: 'otro', label: 'Otro' },
 ];
+
+const CAT_LABELS = Object.fromEntries(CATEGORIAS.map(c => [c.value, c.label]));
 
 const MEDIOS_PAGO = [
   { value: 'efectivo', label: 'Efectivo' },
@@ -44,6 +47,16 @@ export default function FacturasPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [expenses, setExpenses] = useState([]);
+
+  useEffect(() => { loadExpenses(); }, []);
+
+  const loadExpenses = async () => {
+    try {
+      const { data } = await expenseAPI.list();
+      setExpenses(data);
+    } catch {}
+  };
 
   const handleFile = async (e) => {
     const f = e.target.files?.[0];
@@ -57,13 +70,15 @@ export default function FacturasPage() {
     try {
       const { data } = await expenseAPI.ocr(f);
       setResult(data.ocr_data);
+      // Auto-fill form with OCR data
+      fillFromOCR(data.ocr_data, false);
     } catch {
       setResult({ error: 'No se pudo procesar. Ingresa datos manualmente.' });
     }
     setProcessing(false);
   };
 
-  const fillFromOCR = (ocrData) => {
+  const fillFromOCR = (ocrData, openForm = true) => {
     const catMap = {
       'Alimentación': 'alimentacion',
       'Alojamiento': 'alojamiento',
@@ -84,7 +99,7 @@ export default function FacturasPage() {
       numero_factura: ocrData.numero_factura || '',
       cufe: ocrData.cufe || '',
     });
-    setShowManual(true);
+    if (openForm) setShowManual(true);
   };
 
   const handleSave = async () => {
@@ -101,10 +116,19 @@ export default function FacturasPage() {
       setPreview(null);
       setFile(null);
       setForm(emptyForm);
+      loadExpenses();
     } catch (err) {
       alert('Error al guardar el gasto');
     }
     setSaving(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('¿Eliminar este gasto?')) return;
+    try {
+      await expenseAPI.delete(id);
+      loadExpenses();
+    } catch {}
   };
 
   const openManual = () => {
@@ -129,8 +153,8 @@ export default function FacturasPage() {
 
       <div className="card mx-4">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Camera size={16} className="text-orange-500" /> Escaneo Inteligente de Facturas</h3>
-        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Toma una foto de cualquier factura. La IA extraerá automáticamente los datos.</p>
-        <input ref={fileRef} type="file" accept="image/*"  onChange={handleFile} className="hidden" />
+        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Toma una foto de cualquier factura o ingresa los datos manualmente.</p>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
         <div className="flex gap-2">
           <button onClick={() => fileRef.current?.click()} className="btn-primary flex-1 !bg-amber-500 hover:!bg-amber-600">
             <Camera size={18} /> Escanear
@@ -141,7 +165,7 @@ export default function FacturasPage() {
         </div>
       </div>
 
-      {preview && (
+      {preview && !showManual && (
         <div className="card mx-4 mt-3">
           <img src={preview} alt="Preview" className="w-full rounded-xl max-h-48 object-cover mb-3" />
           {processing && (
@@ -151,7 +175,7 @@ export default function FacturasPage() {
               <p className="text-xs text-slate-400 mt-1">Extrayendo datos de la factura</p>
             </div>
           )}
-          {result && !result.error && !showManual && (
+          {result && !result.error && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
               <p className="flex items-center gap-2 text-sm font-bold text-emerald-600 mb-2"><CheckCircle size={16} /> Datos Extraídos</p>
               {Object.entries(result).filter(([,v]) => v).map(([k, v]) => (
@@ -161,8 +185,8 @@ export default function FacturasPage() {
                 </div>
               ))}
               <div className="flex gap-2 mt-3">
-                <button onClick={() => fillFromOCR(result)} className="btn-primary flex-1 !py-2 !text-xs"><CheckCircle size={14} /> Confirmar y Guardar</button>
-                <button onClick={() => { setPreview(null); setResult(null); }} className="btn-outline flex-1 !py-2 !text-xs"><Edit size={14} /> Reintentar</button>
+                <button onClick={() => setShowManual(true)} className="btn-primary flex-1 !py-2 !text-xs"><Save size={14} /> Revisar y Guardar</button>
+                <button onClick={() => { setPreview(null); setResult(null); setFile(null); }} className="btn-outline flex-1 !py-2 !text-xs"><Edit size={14} /> Reintentar</button>
               </div>
             </div>
           )}
@@ -180,20 +204,30 @@ export default function FacturasPage() {
       {showManual && (
         <div className="card mx-4 mt-3">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="flex items-center gap-2 text-sm font-bold"><Edit size={16} className="text-colsein-500" /> Registro Manual</h3>
-            <button onClick={() => setShowManual(false)} className="text-slate-400"><X size={18} /></button>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><Edit size={16} className="text-colsein-500" /> {result && !result.error ? 'Verificar y Guardar' : 'Registro Manual'}</h3>
+            <button onClick={() => { setShowManual(false); if (!result) { setPreview(null); setFile(null); } }} className="text-slate-400"><X size={18} /></button>
           </div>
+
+          {result && !result.error && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 mb-3">
+              <p className="text-xs font-semibold text-blue-600">Los datos fueron pre-llenados del escaneo. Verifica y corrige si es necesario.</p>
+            </div>
+          )}
+
+          {preview && (
+            <img src={preview} alt="Preview" className="w-full rounded-xl max-h-32 object-cover mb-3" />
+          )}
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Categoría</label>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Categoría *</label>
               <select value={form.categoria} onChange={e => set('categoria', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold bg-white">
                 {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha</label>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha *</label>
               <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold" />
             </div>
 
@@ -254,13 +288,37 @@ export default function FacturasPage() {
             {!file && (
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Foto del soporte</label>
-                <input ref={fileRef} type="file" accept="image/*"  onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(URL.createObjectURL(f)); } }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(URL.createObjectURL(f)); } }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
               </div>
             )}
 
             <button onClick={handleSave} disabled={saving} className="btn-primary w-full !py-3">
               {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Guardando...</> : <><Save size={18} /> Guardar Gasto</>}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de gastos guardados */}
+      {expenses.length > 0 && (
+        <div className="card mx-4 mt-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><DollarSign size={16} className="text-emerald-500" /> Gastos Registrados ({expenses.length})</h3>
+          <div className="space-y-2">
+            {expenses.map(exp => (
+              <div key={exp.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
+                    <span className="text-[10px] text-slate-400">{exp.fecha}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-800">{fmt(exp.valor)}</span>
+                  <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
