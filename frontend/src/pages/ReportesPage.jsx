@@ -1,0 +1,134 @@
+import { useState, useEffect } from 'react';
+import { BarChart3, DollarSign, Download, FileText, ChevronRight, TrendingUp } from 'lucide-react';
+import { reportAPI, kmAPI } from '../services/api';
+import { fmt, fmtNum, monthName } from '../utils/helpers';
+
+export default function ReportesPage() {
+  const [dashboard, setDashboard] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    reportAPI.dashboard().then(r => setDashboard(r.data)).catch(() => {});
+  }, []);
+
+  const report = dashboard?.current_report;
+  const yearReports = dashboard?.year_reports || [];
+  const totalKm = parseFloat(report?.total_km || 0);
+  const totalValorKm = parseFloat(report?.total_valor_km || 0);
+  const totalPeajes = parseFloat(report?.total_peajes || 0);
+  const totalParqueaderos = parseFloat(report?.total_parqueaderos || 0);
+  const totalTaxis = parseFloat(report?.total_taxis || 0);
+  const totalOtros = parseFloat(report?.total_otros || 0);
+  const valorTotal = parseFloat(report?.valor_total || 0);
+
+  const downloadExcel = async () => {
+    if (!report) return;
+    setDownloading(true);
+    try {
+      const { data } = await reportAPI.downloadKmExcel(report.id);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Registro_Transporte.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al generar Excel'); }
+    setDownloading(false);
+  };
+
+  const desglose = [
+    { label: 'Kilometraje', value: totalValorKm, color: 'bg-colsein-500' },
+    { label: 'Peajes', value: totalPeajes, color: 'bg-orange-500' },
+    { label: 'Parqueaderos', value: totalParqueaderos, color: 'bg-amber-500' },
+    { label: 'Taxis', value: totalTaxis, color: 'bg-violet-500' },
+    { label: 'Otros', value: totalOtros, color: 'bg-slate-400' },
+  ];
+
+  return (
+    <>
+      {/* Summary */}
+      <div className="card mx-4">
+        <h3 className="flex items-center gap-2 text-sm font-bold mb-4"><BarChart3 size={16} className="text-colsein-500" /> Resumen del Periodo</h3>
+        <div className="grid grid-cols-2 gap-4 mb-5">
+          <div className="text-center">
+            <p className="text-2xl font-extrabold text-colsein-600">{fmtNum(totalKm)}</p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Km Totales</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-extrabold text-emerald-600">{dashboard?.recent_entries?.length || 0}</p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Visitas</p>
+          </div>
+        </div>
+
+        {/* Year chart */}
+        {yearReports.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 mb-2">Kilometraje por mes ({new Date().getFullYear()})</p>
+            <div className="h-20 flex items-end gap-1">
+              {Array.from({ length: 12 }, (_, i) => {
+                const r = yearReports.find(yr => yr.periodo_mes === i + 1);
+                const val = parseFloat(r?.valor_total || 0);
+                const maxVal = Math.max(1, ...yearReports.map(yr => parseFloat(yr.valor_total || 0)));
+                const h = val > 0 ? Math.max(8, (val / maxVal) * 70) : 3;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className={`w-full rounded-sm transition-all ${val > 0 ? 'bg-colsein-500' : 'bg-slate-200'}`} style={{ height: h }} />
+                    <span className="text-[8px] text-slate-400">{monthName(i).substring(0, 3)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cost breakdown */}
+      <div className="card mx-4 mt-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><DollarSign size={16} className="text-emerald-500" /> Desglose de Costos</h3>
+        {desglose.map((item, i) => (
+          <div key={i} className="mb-3">
+            <div className="flex justify-between mb-1">
+              <span className="text-xs font-semibold">{item.label}</span>
+              <span className="text-xs font-bold font-mono">{fmt(item.value)}</span>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all duration-500 ${item.color}`} style={{ width: valorTotal > 0 ? `${(item.value / valorTotal) * 100}%` : '0%' }} />
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between pt-3 mt-2 border-t-2 border-slate-200">
+          <span className="text-sm font-extrabold">VALOR A PAGAR</span>
+          <span className="text-base font-extrabold text-colsein-600 font-mono">{fmt(valorTotal)}</span>
+        </div>
+      </div>
+
+      {/* Export */}
+      <div className="card mx-4 mt-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><Download size={16} className="text-amber-600" /> Generar Documentos</h3>
+        {[
+          { label: 'Registro de Medios de Transporte (Excel)', desc: 'Formato oficial V.08 con tarifas vigentes', action: downloadExcel, enabled: !!report },
+          { label: 'Solicitud de Anticipo (Excel)', desc: 'Formato oficial con presupuesto', enabled: false },
+          { label: 'Legalización de Gastos (Excel)', desc: 'Desglose por día y categoría', enabled: false },
+          { label: 'Compilación de Soportes (PDF)', desc: 'Todas las facturas del periodo', enabled: false },
+        ].map((doc, i) => (
+          <button key={i} onClick={doc.action} disabled={!doc.enabled || downloading} className="w-full flex items-center gap-3 py-3 border-b border-slate-100 last:border-0 text-left disabled:opacity-40 hover:bg-slate-50 transition-colors rounded-lg px-1">
+            <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+              <FileText size={16} className="text-emerald-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold">{doc.label}</p>
+              <p className="text-[11px] text-slate-400">{doc.desc}</p>
+            </div>
+            <ChevronRight size={16} className="text-slate-300" />
+          </button>
+        ))}
+      </div>
+
+      {/* Trend */}
+      <div className="card mx-4 mt-3 mb-2">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-600"><TrendingUp size={16} className="text-colsein-500" /> Próximamente</div>
+        <p className="text-xs text-slate-400 mt-2 leading-relaxed">Dashboard avanzado con mapa de visitas, ranking por vendedor, detección de anomalías y comparativas mensuales.</p>
+      </div>
+    </>
+  );
+}
