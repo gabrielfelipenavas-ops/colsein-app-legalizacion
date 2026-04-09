@@ -191,53 +191,73 @@ router.post('/match', auth, async (req, res) => {
         const parsed = await simpleParser(all.body);
         const body = parsed.text || '';
         const subject = parsed.subject || '';
+        const from = parsed.from?.text || '';
+        const fullText = `${subject} ${from} ${body}`.toLowerCase();
 
-        const nitMatch = body.match(/NIT[.:;\s]*(\d[\d.,\-]+)/i);
-        const valorMatch = body.match(/(?:total|valor|monto)[.:;\s$]*\$?\s*([\d.,]+)/i);
+        const nitMatch = fullText.match(/nit[.:;\s]*(\d[\d.,\-]+)/i) || body.match(/(\d{3,}[\.\-]\d{3,}[\.\-]\d{3,})/);
+        const valorMatch = body.match(/(?:total|valor|monto|neto)[.:;\s$]*\$?\s*([\d.,]+)/i);
 
-        if (nitMatch || valorMatch) {
-          emailInvoices.push({
-            uid: msg.attributes?.uid,
-            date: parsed.date,
-            from: parsed.from?.text || '',
-            subject,
-            nit: nitMatch ? nitMatch[1].replace(/[.\s]/g, '') : null,
-            valor: valorMatch ? parseFloat(valorMatch[1].replace(/\./g, '').replace(',', '.')) : null,
-          });
-        }
+        emailInvoices.push({
+          uid: msg.attributes?.uid,
+          date: parsed.date,
+          from,
+          subject,
+          fullText,
+          nit: nitMatch ? nitMatch[1].replace(/[.\s]/g, '') : null,
+          valor: valorMatch ? parseFloat(valorMatch[1].replace(/\./g, '').replace(',', '.')) : null,
+        });
       } catch { continue; }
     }
 
     connection.end();
 
-    // Match expenses with email invoices
+    // Match expenses with email invoices — flexible matching
     const matches = [];
     for (const exp of expenses) {
       const expNit = (exp.nit_establecimiento || '').replace(/[.\-\s]/g, '');
+      const expNombre = (exp.establecimiento || '').toLowerCase().trim();
       const expValor = parseFloat(exp.valor || 0);
-      const expFecha = new Date(exp.fecha);
+
+      let bestMatch = null;
+      let bestScore = 0;
 
       for (const inv of emailInvoices) {
         const invNit = (inv.nit || '').replace(/[.\-\s]/g, '');
-        const invFecha = inv.date ? new Date(inv.date) : null;
-        const daysDiff = invFecha ? Math.abs((expFecha - invFecha) / 86400000) : 999;
+        let score = 0;
 
-        // Match by NIT
-        const nitMatch = expNit && invNit && (expNit.includes(invNit) || invNit.includes(expNit));
-        // Match by value (within 10%)
-        const valorMatch = inv.valor && expValor && Math.abs(inv.valor - expValor) / expValor < 0.1;
-        // Match by date (within 5 days)
-        const fechaMatch = daysDiff <= 5;
-
-        if ((nitMatch && fechaMatch) || (nitMatch && valorMatch) || (valorMatch && fechaMatch)) {
-          matches.push({
-            expense_id: exp.id,
-            expense: { id: exp.id, categoria: exp.categoria, establecimiento: exp.establecimiento, fecha: exp.fecha, valor: exp.valor, nit: exp.nit_establecimiento },
-            email: { uid: inv.uid, from: inv.from, subject: inv.subject, date: inv.date, nit: inv.nit, valor: inv.valor },
-            confidence: (nitMatch ? 40 : 0) + (valorMatch ? 35 : 0) + (fechaMatch ? 25 : 0),
-          });
-          break; // One match per expense
+        // Match by NIT (strongest signal)
+        if (expNit && invNit && expNit.length >= 5 && (expNit.includes(invNit) || invNit.includes(expNit))) {
+          score += 50;
         }
+
+        // Match by name in subject/from/body
+        if (expNombre && expNombre.length >= 3) {
+          // Split name into words and check if any appear in the email
+          const words = expNombre.split(/\s+/).filter(w => w.length >= 3);
+          const nameMatches = words.filter(w => inv.fullText.includes(w)).length;
+          if (nameMatches > 0) {
+            score += Math.min(40, nameMatches * 20); // up to 40 points
+          }
+        }
+
+        // Match by value (bonus, not required)
+        if (inv.valor && expValor && Math.abs(inv.valor - expValor) / Math.max(expValor, 1) < 0.15) {
+          score += 10;
+        }
+
+        if (score > bestScore && score >= 20) {
+          bestScore = score;
+          bestMatch = inv;
+        }
+      }
+
+      if (bestMatch) {
+        matches.push({
+          expense_id: exp.id,
+          expense: { id: exp.id, categoria: exp.categoria, establecimiento: exp.establecimiento, fecha: exp.fecha, valor: exp.valor, nit: exp.nit_establecimiento },
+          email: { uid: bestMatch.uid, from: bestMatch.from, subject: bestMatch.subject, date: bestMatch.date, nit: bestMatch.nit, valor: bestMatch.valor },
+          confidence: Math.min(100, bestScore),
+        });
       }
     }
 
