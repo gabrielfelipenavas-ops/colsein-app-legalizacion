@@ -8,8 +8,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('colsein_token');
-    const stored = localStorage.getItem('colsein_user');
+    const token = sessionStorage.getItem('colsein_token');
+    const stored = sessionStorage.getItem('colsein_user');
     if (token && stored) {
       try {
         setUser(JSON.parse(stored));
@@ -20,15 +20,15 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await authAPI.login(email, password);
-    localStorage.setItem('colsein_token', data.token);
-    localStorage.setItem('colsein_user', JSON.stringify(data.user));
+    sessionStorage.setItem('colsein_token', data.token);
+    sessionStorage.setItem('colsein_user', JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
   };
 
   const logout = () => {
-    localStorage.removeItem('colsein_token');
-    localStorage.removeItem('colsein_user');
+    sessionStorage.removeItem('colsein_token');
+    sessionStorage.removeItem('colsein_user');
     setUser(null);
   };
 
