@@ -154,6 +154,44 @@ function parseColombianReceipt(text) {
   };
 }
 
+// GET /api/expenses/:id — get single expense
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+    if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    res.json(expense);
+  } catch (err) {
+    res.status(500).json({ error: 'Error' });
+  }
+});
+
+// PUT /api/expenses/:id — update expense (optionally replace image)
+router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
+  try {
+    const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+    if (!expense) return res.status(404).json({ error: 'No encontrado' });
+
+    const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
+      'direccion', 'valor', 'iva', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
+    const updates = {};
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) updates[k] = req.body[k];
+    }
+
+    if (req.file) {
+      const uploadDir = process.env.UPLOAD_DIR || './uploads';
+      const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
+      updates.imagen_url = `/uploads/${rel}`;
+    }
+
+    await expense.update(updates);
+    res.json(expense);
+  } catch (err) {
+    console.error('Update expense error:', err);
+    res.status(500).json({ error: 'Error al actualizar gasto' });
+  }
+});
+
 // DELETE /api/expenses/:id
 router.delete('/:id', auth, async (req, res) => {
   try {

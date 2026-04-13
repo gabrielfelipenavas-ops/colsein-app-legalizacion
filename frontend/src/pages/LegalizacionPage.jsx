@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock } from 'lucide-react';
+import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save } from 'lucide-react';
 import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 
@@ -280,9 +280,136 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
   );
 }
 
+function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
+  let extra = {};
+  try { extra = JSON.parse(legalization.observaciones_imprevistos || '{}'); } catch {}
+
+  const [tipo, setTipo] = useState(extra.tipo || 'local');
+  const [motivo, setMotivo] = useState(extra.motivo || '');
+  const [ciudades, setCiudades] = useState(legalization.ciudades_visitadas || '');
+  const [moneda, setMoneda] = useState(legalization.moneda || 'COP');
+  const [valorAnticipo, setValorAnticipo] = useState(legalization.valor_anticipo || 0);
+  const [allExpenses, setAllExpenses] = useState([]);
+  const [selectedIds, setSelectedIds] = useState((legalization.expenses || []).map(e => e.id));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    expenseAPI.list().then(r => setAllExpenses(r.data)).catch(() => {});
+  }, []);
+
+  const availableExpenses = allExpenses.filter(e =>
+    e.legalization_id === legalization.id || !e.legalization_id
+  );
+
+  const totalSelected = availableExpenses
+    .filter(e => selectedIds.includes(e.id))
+    .reduce((s, e) => s + parseFloat(e.valor || 0), 0);
+
+  const toggle = (id) => setSelectedIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await legalizationAPI.update(legalization.id, {
+        ciudades_visitadas: ciudades,
+        moneda,
+        tipo,
+        motivo,
+        valor_anticipo: parseFloat(valorAnticipo) || 0,
+      });
+      await legalizationAPI.updateExpenses(legalization.id, selectedIds);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between z-10">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><Edit size={16} className="text-colsein-500" /> Editar Legalización #{legalization.id}</h3>
+          <button onClick={onClose} className="text-slate-400"><X size={20} /></button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo</label>
+            <div className="flex gap-1.5">
+              {[{ v: 'local', l: 'Local' }, { v: 'viaje', l: 'Viaje' }].map(t => (
+                <button key={t.v} onClick={() => setTipo(t.v)}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border ${tipo === t.v ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
+                  {t.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tipo === 'local' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Motivo</label>
+              <input type="text" value={motivo} onChange={e => setMotivo(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Ciudades Visitadas</label>
+            <input type="text" value={ciudades} onChange={e => setCiudades(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Moneda</label>
+              <select value={moneda} onChange={e => setMoneda(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+                <option value="COP">COP</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Valor Anticipo</label>
+              <input type="number" value={valorAnticipo} onChange={e => setValorAnticipo(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+            </div>
+          </div>
+
+          {/* Gastos asociados */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Gastos asociados ({selectedIds.length})</label>
+            <div className="max-h-60 overflow-y-auto space-y-1 border border-slate-200 rounded-xl p-2">
+              {availableExpenses.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-2">No hay gastos disponibles</p>
+              ) : availableExpenses.map(e => (
+                <label key={e.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="w-4 h-4 accent-colsein-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-700 truncate">{CAT_LABELS[e.categoria] || e.categoria} — {e.establecimiento || 'Sin nombre'}</p>
+                    <p className="text-[10px] text-slate-400">{e.fecha}</p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700">{fmt(e.valor)}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1 text-right">Total seleccionado: <span className="font-bold text-colsein-600">{fmt(totalSelected)}</span></p>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex gap-2">
+          <button onClick={onClose} className="btn-outline flex-1 !py-2.5 !text-xs">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 !py-2.5 !text-xs">
+            {saving ? 'Guardando...' : <><Save size={14} /> Guardar</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LegalizacionPage() {
   const [legalizations, setLegalizations] = useState([]);
   const [showNew, setShowNew] = useState(false);
+  const [editingLeg, setEditingLeg] = useState(null);
 
   const load = () => { legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {}); };
   useEffect(load, []);
@@ -330,9 +457,16 @@ export default function LegalizacionPage() {
                   <div className="text-right">
                     <StatusBadge status={leg.estado} />
                     <p className="text-sm font-extrabold text-colsein-600 mt-1">{fmt(parseFloat(leg.gasto_real_total || 0))}</p>
-                    <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold mt-1 flex items-center gap-1 ml-auto">
-                      <Download size={11} /> Excel
-                    </button>
+                    <div className="flex items-center gap-2 justify-end mt-1">
+                      {leg.estado === 'borrador' && (
+                        <button onClick={() => setEditingLeg(leg)} className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
+                          <Edit size={11} /> Editar
+                        </button>
+                      )}
+                      <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">
+                        <Download size={11} /> Excel
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -342,6 +476,7 @@ export default function LegalizacionPage() {
       </div>
 
       {showNew && <NuevaLegalizacionModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
+      {editingLeg && <EditarLegalizacionModal legalization={editingLeg} onClose={() => setEditingLeg(null)} onSaved={() => { setEditingLeg(null); load(); }} />}
     </>
   );
 }

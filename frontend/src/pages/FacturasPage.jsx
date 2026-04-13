@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink } from 'lucide-react';
+import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI } from '../services/api';
 import { fmt } from '../utils/helpers';
 
@@ -384,6 +384,207 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
   );
 }
 
+function ExpenseDetailModal({ expense, onClose, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    categoria: expense.categoria || 'otro',
+    fecha: expense.fecha || '',
+    establecimiento: expense.establecimiento || '',
+    nit_establecimiento: expense.nit_establecimiento || '',
+    direccion: expense.direccion || '',
+    valor: expense.valor || '',
+    iva: expense.iva || '',
+    medio_pago: expense.medio_pago || 'efectivo',
+    numero_factura: expense.numero_factura || '',
+    cufe: expense.cufe || '',
+    observaciones: expense.observaciones || '',
+  });
+  const [newFile, setNewFile] = useState(null);
+  const [newPreview, setNewPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const isPdf = expense.imagen_url?.toLowerCase().endsWith('.pdf');
+  const imageSrc = expense.imagen_url ? (expense.imagen_url.startsWith('/') ? expense.imagen_url : `/${expense.imagen_url}`) : null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      Object.entries(form).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
+      if (newFile) fd.append('imagen', newFile);
+      await expenseAPI.update(expense.id, fd);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      alert('Error al actualizar: ' + (err.response?.data?.error || err.message));
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between z-10">
+          <h3 className="flex items-center gap-2 text-sm font-bold">
+            {editing ? <><Edit size={16} className="text-colsein-500" /> Editar gasto</> : <><Eye size={16} className="text-colsein-500" /> Detalle del gasto</>}
+          </h3>
+          <button onClick={onClose} className="text-slate-400"><X size={20} /></button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {/* Imagen */}
+          {(newPreview || imageSrc) && !isPdf && (
+            <div className="bg-slate-100 rounded-xl overflow-hidden">
+              <img src={newPreview || imageSrc} alt="Soporte" className="w-full max-h-80 object-contain" onError={e => { e.target.style.display = 'none'; }} />
+            </div>
+          )}
+          {isPdf && !newFile && (
+            <a href={imageSrc} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl hover:bg-blue-100">
+              <FileText size={20} className="text-blue-500" />
+              <span className="text-sm font-semibold text-blue-700">Abrir PDF del soporte</span>
+              <ExternalLink size={14} className="text-blue-500 ml-auto" />
+            </a>
+          )}
+          {!imageSrc && !newPreview && !isPdf && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
+              <AlertTriangle size={14} className="text-amber-500" />
+              <span className="text-xs font-semibold text-amber-700">Sin imagen de soporte</span>
+            </div>
+          )}
+
+          {/* Cambiar imagen al editar */}
+          {editing && (
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Reemplazar soporte (opcional)</label>
+              <input type="file" accept="image/*,application/pdf" onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setNewFile(f);
+                  if (f.type.startsWith('image/')) setNewPreview(URL.createObjectURL(f));
+                  else setNewPreview(null);
+                }
+              }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white" />
+              {newFile && (
+                <p className="text-[10px] text-emerald-600 mt-1">Nuevo: {newFile.name}</p>
+              )}
+            </div>
+          )}
+
+          {/* Campos */}
+          {editing ? (
+            <>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Categoría</label>
+                <select value={form.categoria} onChange={e => set('categoria', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+                  {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha</label>
+                <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Establecimiento</label>
+                <input type="text" value={form.establecimiento} onChange={e => set('establecimiento', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">NIT</label>
+                  <input type="text" value={form.nit_establecimiento} onChange={e => set('nit_establecimiento', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">No. Factura</label>
+                  <input type="text" value={form.numero_factura} onChange={e => set('numero_factura', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Dirección</label>
+                <input type="text" value={form.direccion} onChange={e => set('direccion', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">Valor</label>
+                  <input type="number" value={form.valor} onChange={e => set('valor', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">IVA</label>
+                  <input type="number" value={form.iva} onChange={e => set('iva', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
+                <div className="flex gap-1.5">
+                  {MEDIOS_PAGO.map(m => (
+                    <button key={m.value} onClick={() => set('medio_pago', m.value)}
+                      className={`flex-1 py-2 rounded-xl text-[11px] font-bold border ${form.medio_pago === m.value ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">CUFE</label>
+                <input type="text" value={form.cufe} onChange={e => set('cufe', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Observaciones</label>
+                <textarea value={form.observaciones} onChange={e => set('observaciones', e.target.value)} rows={2} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm resize-none" />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              {[
+                ['Categoría', CAT_LABELS[expense.categoria] || expense.categoria],
+                ['Fecha', expense.fecha],
+                ['Establecimiento', expense.establecimiento || '—'],
+                ['NIT', expense.nit_establecimiento || '—'],
+                ['Dirección', expense.direccion || '—'],
+                ['No. Factura', expense.numero_factura || '—'],
+                ['Valor', fmt(expense.valor)],
+                ['IVA', fmt(expense.iva)],
+                ['Medio de Pago', MEDIOS_PAGO.find(m => m.value === expense.medio_pago)?.label || expense.medio_pago],
+                ['CUFE', expense.cufe || '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between py-1.5 border-b border-slate-100">
+                  <span className="text-[11px] font-semibold uppercase text-slate-400">{label}</span>
+                  <span className="text-xs font-semibold text-slate-700 text-right max-w-[60%] break-words">{value}</span>
+                </div>
+              ))}
+              {expense.observaciones && (
+                <div className="pt-2">
+                  <p className="text-[11px] font-semibold uppercase text-slate-400 mb-1">Observaciones</p>
+                  <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg">{expense.observaciones}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex gap-2">
+          {editing ? (
+            <>
+              <button onClick={() => setEditing(false)} className="btn-outline flex-1 !py-2.5 !text-xs">Cancelar</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 !py-2.5 !text-xs">
+                {saving ? 'Guardando...' : <><Save size={14} /> Guardar</>}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose} className="btn-outline flex-1 !py-2.5 !text-xs">Cerrar</button>
+              {expense.legalization_id ? (
+                <div className="flex-1 text-center text-[10px] text-slate-400 py-2.5">Ya legalizado</div>
+              ) : (
+                <button onClick={() => setEditing(true)} className="btn-primary flex-1 !py-2.5 !text-xs"><Edit size={14} /> Editar</button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FacturasPage() {
   const fileRef = useRef(null);
   const manualFileRef = useRef(null);
@@ -397,6 +598,7 @@ export default function FacturasPage() {
   const [saved, setSaved] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [validationError, setValidationError] = useState('');
+  const [selectedExpense, setSelectedExpense] = useState(null);
 
   useEffect(() => { loadExpenses(); }, []);
 
@@ -784,17 +986,27 @@ export default function FacturasPage() {
           <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><DollarSign size={16} className="text-emerald-500" /> Gastos Registrados ({expenses.length})</h3>
           <div className="space-y-2">
             {expenses.map(exp => (
-              <div key={exp.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
-                    <span className="text-[10px] text-slate-400">{exp.fecha}</span>
-                    {exp.observaciones?.includes('[SIN SOPORTE') && <AlertTriangle size={12} className="text-amber-500" />}
+              <div key={exp.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                <button onClick={() => setSelectedExpense(exp)} className="flex-1 min-w-0 text-left flex items-center gap-2">
+                  {exp.imagen_url && !exp.imagen_url.toLowerCase().endsWith('.pdf') ? (
+                    <img src={exp.imagen_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" onError={e => { e.target.style.display = 'none'; }} />
+                  ) : exp.imagen_url ? (
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={14} className="text-blue-500" /></div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-slate-400" /></div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
+                      <span className="text-[10px] text-slate-400">{exp.fecha}</span>
+                      {exp.observaciones?.includes('[SIN SOPORTE') && <AlertTriangle size={12} className="text-amber-500" />}
+                    </div>
+                    <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
                   </div>
-                  <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
-                </div>
-                <div className="flex items-center gap-2">
+                </button>
+                <div className="flex items-center gap-2 ml-2">
                   <span className="text-sm font-bold text-slate-800">{fmt(exp.valor)}</span>
+                  <button onClick={() => setSelectedExpense(exp)} className="text-colsein-500 hover:text-colsein-700 p-1" title="Ver/Editar"><Eye size={14} /></button>
                   <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
                 </div>
               </div>
@@ -805,6 +1017,14 @@ export default function FacturasPage() {
 
       {/* Buscar facturas en correo */}
       <EmailSearchSection expenses={expenses} onMatchSaved={loadExpenses} />
+
+      {selectedExpense && (
+        <ExpenseDetailModal
+          expense={selectedExpense}
+          onClose={() => setSelectedExpense(null)}
+          onSaved={loadExpenses}
+        />
+      )}
 
       <div className="card mx-4 mt-3">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><FileText size={16} className="text-colsein-500" /> Documentos Soportados</h3>

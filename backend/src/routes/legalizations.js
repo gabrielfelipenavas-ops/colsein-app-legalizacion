@@ -73,6 +73,51 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// PUT /api/legalizations/:id — update main fields
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const leg = await db.ExpenseLegalization.findByPk(req.params.id);
+    if (!leg) return res.status(404).json({ error: 'No encontrada' });
+    if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
+    if (['aprobado', 'enviado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'No se puede editar una legalización ya enviada o aprobada' });
+    }
+
+    const { ciudades_visitadas, moneda, tipo, motivo, valor_anticipo } = req.body;
+    const updates = {};
+    if (ciudades_visitadas !== undefined) updates.ciudades_visitadas = ciudades_visitadas;
+    if (moneda !== undefined) updates.moneda = moneda;
+    if (valor_anticipo !== undefined) updates.valor_anticipo = parseFloat(valor_anticipo) || 0;
+
+    if (tipo !== undefined || motivo !== undefined) {
+      let current = {};
+      try { current = JSON.parse(leg.observaciones_imprevistos || '{}'); } catch {}
+      updates.observaciones_imprevistos = JSON.stringify({
+        tipo: tipo !== undefined ? tipo : (current.tipo || 'local'),
+        motivo: motivo !== undefined ? motivo : (current.motivo || ''),
+      });
+    }
+
+    await leg.update(updates);
+
+    // Recalculate totals if valor_anticipo changed
+    if (valor_anticipo !== undefined) {
+      const gasto_real_total = parseFloat(leg.gasto_real_total || 0);
+      const anticipo = parseFloat(updates.valor_anticipo);
+      const diff = gasto_real_total - anticipo;
+      await leg.update({
+        pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
+        pago_favor_empleado: diff > 0 ? diff : 0,
+      });
+    }
+
+    res.json(leg);
+  } catch (err) {
+    console.error('Update legalization error:', err);
+    res.status(500).json({ error: 'Error al actualizar legalización' });
+  }
+});
+
 // PUT /api/legalizations/:id/expenses — associate expenses and recalculate
 router.put('/:id/expenses', auth, async (req, res) => {
   try {

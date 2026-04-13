@@ -59,9 +59,14 @@ export const anticipoAPI = {
 // ── EXPENSES ──
 export const expenseAPI = {
   list: (params) => api.get('/expenses', { params }),
+  get: (id) => api.get(`/expenses/${id}`),
   create: (data) => {
     if (data instanceof FormData) return api.post('/expenses', data, { headers: { 'Content-Type': 'multipart/form-data' } });
     return api.post('/expenses', data);
+  },
+  update: (id, data) => {
+    if (data instanceof FormData) return api.put(`/expenses/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return api.put(`/expenses/${id}`, data);
   },
   ocr: (file) => {
     const fd = new FormData();
@@ -87,6 +92,7 @@ export const legalizationAPI = {
   list: () => api.get('/legalizations'),
   get: (id) => api.get(`/legalizations/${id}`),
   create: (data) => api.post('/legalizations', data),
+  update: (id, data) => api.put(`/legalizations/${id}`, data),
   updateExpenses: (id, expense_ids) => api.put(`/legalizations/${id}/expenses`, { expense_ids }),
   submit: (id) => api.post(`/legalizations/${id}/submit`),
   approve: (id, action, comentarios) => api.post(`/legalizations/${id}/approve`, { action, comentarios }),
