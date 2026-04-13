@@ -176,6 +176,23 @@ const Expense = sequelize.define('Expense', {
   observaciones: Sequelize.TEXT,
 }, { tableName: 'expenses', underscored: true });
 
+// ── EmailMatch ──
+const EmailMatch = sequelize.define('EmailMatch', {
+  expense_id: { type: Sequelize.INTEGER, allowNull: false, unique: true },
+  user_id: { type: Sequelize.INTEGER, allowNull: false },
+  email_uid: { type: Sequelize.STRING(100), allowNull: false },
+  email_subject: Sequelize.STRING(500),
+  email_from: Sequelize.STRING(300),
+  email_date: Sequelize.DATE,
+  nit_extracted: Sequelize.STRING(30),
+  valor_extracted: Sequelize.DECIMAL(12, 2),
+  numero_factura: Sequelize.STRING(50),
+  attachments: { type: Sequelize.JSONB, defaultValue: [] },
+  attachment_paths: { type: Sequelize.JSONB, defaultValue: [] },
+  match_type: { type: Sequelize.ENUM('auto', 'manual'), allowNull: false, defaultValue: 'manual' },
+  confidence: { type: Sequelize.INTEGER, defaultValue: 0 },
+}, { tableName: 'email_matches', underscored: true });
+
 // ── Approval ──
 const Approval = sequelize.define('Approval', {
   tipo: { type: Sequelize.ENUM('kilometraje', 'anticipo', 'legalizacion'), allowNull: false },
@@ -207,6 +224,11 @@ User.hasMany(Expense, { foreignKey: 'user_id' });
 Expense.belongsTo(User, { foreignKey: 'user_id' });
 Expense.belongsTo(ExpenseLegalization, { foreignKey: 'legalization_id' });
 
+User.hasMany(EmailMatch, { foreignKey: 'user_id' });
+EmailMatch.belongsTo(User, { foreignKey: 'user_id' });
+Expense.hasOne(EmailMatch, { foreignKey: 'expense_id', as: 'emailMatch' });
+EmailMatch.belongsTo(Expense, { foreignKey: 'expense_id' });
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 db.User = User;
@@ -218,5 +240,6 @@ db.TravelRequest = TravelRequest;
 db.ExpenseLegalization = ExpenseLegalization;
 db.Expense = Expense;
 db.Approval = Approval;
+db.EmailMatch = EmailMatch;
 
 module.exports = db;

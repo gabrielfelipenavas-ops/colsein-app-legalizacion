@@ -3,6 +3,8 @@ const imaps = require('imap-simple');
 const { simpleParser } = require('mailparser');
 const { auth } = require('../middleware/auth');
 const db = require('../models');
+const path = require('path');
+const fs = require('fs');
 
 const getImapConfig = () => ({
   imap: {
@@ -262,10 +264,158 @@ router.post('/match', auth, async (req, res) => {
     }
 
     matches.sort((a, b) => b.confidence - a.confidence);
-    res.json({ total_expenses: expenses.length, total_emails: emailInvoices.length, matches });
+
+    // Auto-save matches with confidence >= 50
+    let saved = 0;
+    for (const m of matches) {
+      if (m.confidence >= 50) {
+        const existing = await db.EmailMatch.findOne({ where: { expense_id: m.expense_id } });
+        if (!existing) {
+          await db.EmailMatch.create({
+            expense_id: m.expense_id,
+            user_id: req.user.id,
+            email_uid: String(m.email.uid),
+            email_subject: m.email.subject,
+            email_from: m.email.from,
+            email_date: m.email.date,
+            nit_extracted: m.email.nit,
+            valor_extracted: m.email.valor,
+            numero_factura: null,
+            attachments: [],
+            match_type: 'auto',
+            confidence: m.confidence,
+          });
+          saved++;
+        }
+      }
+    }
+
+    res.json({ total_expenses: expenses.length, total_emails: emailInvoices.length, matches, auto_saved: saved });
   } catch (err) {
     console.error('Match error:', err);
     res.status(500).json({ error: 'Error al buscar coincidencias: ' + (err.message || err) });
+  }
+});
+
+// GET /api/email/matches — list saved matches for user (filterable by month/year)
+router.get('/matches', auth, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const where = { user_id: req.user.id };
+
+    const include = [{
+      model: db.Expense,
+      attributes: ['id', 'categoria', 'establecimiento', 'nit_establecimiento', 'fecha', 'valor', 'numero_factura', 'imagen_url'],
+    }];
+
+    let matches = await db.EmailMatch.findAll({ where, include, order: [['created_at', 'DESC']] });
+
+    // Filter by expense date month/year if provided
+    if (month && year) {
+      matches = matches.filter(m => {
+        if (!m.Expense?.fecha) return false;
+        const d = new Date(m.Expense.fecha);
+        return (d.getMonth() + 1) === parseInt(month) && d.getFullYear() === parseInt(year);
+      });
+    }
+
+    res.json(matches);
+  } catch (err) {
+    console.error('Get matches error:', err);
+    res.status(500).json({ error: 'Error al obtener cruces' });
+  }
+});
+
+// POST /api/email/save-match — manually save a match + download attachments
+router.post('/save-match', auth, async (req, res) => {
+  try {
+    const { expense_id, email_uid, email_subject, email_from, email_date,
+            nit_extracted, valor_extracted, numero_factura, attachments,
+            match_type, confidence } = req.body;
+
+    if (!expense_id || !email_uid) {
+      return res.status(400).json({ error: 'expense_id y email_uid son requeridos' });
+    }
+
+    // Verify expense belongs to user
+    const expense = await db.Expense.findOne({ where: { id: expense_id, user_id: req.user.id } });
+    if (!expense) return res.status(404).json({ error: 'Gasto no encontrado' });
+
+    // Check if already matched
+    const existing = await db.EmailMatch.findOne({ where: { expense_id } });
+    if (existing) return res.status(409).json({ error: 'Este gasto ya tiene una factura electrónica vinculada' });
+
+    // Try to download and save attachments from email
+    const savedPaths = [];
+    try {
+      if (process.env.IMAP_USER && process.env.IMAP_PASS) {
+        const uploadDir = process.env.UPLOAD_DIR || './uploads';
+        const userDir = path.join(uploadDir, String(req.user.id), 'facturas_email');
+        if (!fs.existsSync(userDir)) fs.mkdirSync(userDir, { recursive: true });
+
+        const connection = await imaps.connect(getImapConfig());
+        await connection.openBox('INBOX');
+        const msgs = await connection.search([['UID', email_uid]], { bodies: '', struct: true });
+        if (msgs.length > 0) {
+          const all = msgs[0].parts.find(p => p.which === '');
+          const parsed = await simpleParser(all.body);
+          for (const att of (parsed.attachments || [])) {
+            const name = (att.filename || '').toLowerCase();
+            if (name.endsWith('.pdf') || name.endsWith('.xml') || name.endsWith('.zip')) {
+              const safeName = `${email_uid}_${att.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+              const filePath = path.join(userDir, safeName);
+              fs.writeFileSync(filePath, att.content);
+              savedPaths.push({ filename: att.filename, path: filePath, contentType: att.contentType });
+            }
+          }
+        }
+        connection.end();
+      }
+    } catch (dlErr) {
+      console.error('Error downloading attachments:', dlErr.message);
+    }
+
+    const match = await db.EmailMatch.create({
+      expense_id,
+      user_id: req.user.id,
+      email_uid: String(email_uid),
+      email_subject,
+      email_from,
+      email_date,
+      nit_extracted,
+      valor_extracted,
+      numero_factura,
+      attachments: attachments || [],
+      attachment_paths: savedPaths,
+      match_type: match_type || 'manual',
+      confidence: confidence || 0,
+    });
+
+    res.status(201).json(match);
+  } catch (err) {
+    console.error('Save match error:', err);
+    res.status(500).json({ error: 'Error al guardar cruce' });
+  }
+});
+
+// DELETE /api/email/match/:id — remove a saved match
+router.delete('/match/:id', auth, async (req, res) => {
+  try {
+    const match = await db.EmailMatch.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+    if (!match) return res.status(404).json({ error: 'Cruce no encontrado' });
+
+    // Clean up saved files
+    if (match.attachment_paths && Array.isArray(match.attachment_paths)) {
+      for (const att of match.attachment_paths) {
+        try { if (fs.existsSync(att.path)) fs.unlinkSync(att.path); } catch {}
+      }
+    }
+
+    await match.destroy();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete match error:', err);
+    res.status(500).json({ error: 'Error al eliminar cruce' });
   }
 });
 

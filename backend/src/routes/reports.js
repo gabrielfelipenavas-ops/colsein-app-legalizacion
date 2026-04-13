@@ -1,7 +1,9 @@
 const router = require('express').Router();
 const db = require('../models');
+const { Op } = require('sequelize');
 const { auth } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel } = require('../services/excelGenerator');
+const archiver = require('archiver');
 const path = require('path');
 const fs = require('fs');
 
@@ -97,6 +99,99 @@ router.get('/dashboard', auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error' });
+  }
+});
+
+// GET /api/reports/monthly-pack/:year/:month — download ZIP with all monthly documents
+router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const year = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const mesNombre = meses[month - 1] || 'Mes';
+
+    const user = await db.User.findByPk(userId);
+    const userName = user.nombre.replace(/\s/g, '_');
+
+    // Set up ZIP stream
+    const filename = `Paquete_${mesNombre}_${year}_${userName}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    // 1. Kilometraje Excel for the month
+    const kmReport = await db.KilometrageReport.findOne({
+      where: { user_id: userId, periodo_mes: month, periodo_anio: year },
+      include: [
+        { model: db.KilometrageEntry, as: 'entries', order: [['fecha', 'ASC'], ['id', 'ASC']] },
+        { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona', 'vehiculo_tipo', 'placa'] },
+      ],
+    });
+
+    if (kmReport) {
+      const tarifaCarro = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || process.env.TARIFA_CARRO || '600.65';
+      const tarifaMoto = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || process.env.TARIFA_MOTO || '507.03';
+      const kmWb = await generateKilometrageExcel(kmReport, kmReport.entries, kmReport.User, { carro: tarifaCarro, moto: tarifaMoto });
+      const kmBuffer = await kmWb.xlsx.writeBuffer();
+      archive.append(kmBuffer, { name: `Movilidad/Registro_Transporte_${mesNombre}_${year}.xlsx` });
+    }
+
+    // 2. Legalization Excels for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0);
+
+    const legalizations = await db.ExpenseLegalization.findAll({
+      where: { user_id: userId },
+      include: [
+        { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona'] },
+        { model: db.TravelRequest },
+        { model: db.Expense, as: 'expenses' },
+      ],
+    });
+
+    // Filter legalizations that have expenses in the target month
+    for (const leg of legalizations) {
+      const hasExpensesInMonth = leg.expenses.some(e => {
+        const d = new Date(e.fecha);
+        return d.getMonth() + 1 === month && d.getFullYear() === year;
+      });
+      if (!hasExpensesInMonth) continue;
+
+      const legWb = await generateLegalizationExcel(leg, leg.expenses, leg.User, leg.TravelRequest);
+      const legBuffer = await legWb.xlsx.writeBuffer();
+      archive.append(legBuffer, { name: `Legalizaciones/Legalizacion_${leg.id}.xlsx` });
+    }
+
+    // 3. Email invoice attachments (saved from matches)
+    const emailMatches = await db.EmailMatch.findAll({
+      where: { user_id: userId },
+      include: [{ model: db.Expense, attributes: ['id', 'fecha', 'establecimiento'] }],
+    });
+
+    const monthMatches = emailMatches.filter(m => {
+      if (!m.Expense?.fecha) return false;
+      const d = new Date(m.Expense.fecha);
+      return (d.getMonth() + 1) === month && d.getFullYear() === year;
+    });
+
+    for (const match of monthMatches) {
+      if (match.attachment_paths && Array.isArray(match.attachment_paths)) {
+        for (const att of match.attachment_paths) {
+          if (att.path && fs.existsSync(att.path)) {
+            const label = (match.Expense?.establecimiento || 'factura').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
+            archive.file(att.path, { name: `Facturas_Electronicas/${label}_${att.filename}` });
+          }
+        }
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('Monthly pack error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Error al generar paquete mensual' });
   }
 });
 

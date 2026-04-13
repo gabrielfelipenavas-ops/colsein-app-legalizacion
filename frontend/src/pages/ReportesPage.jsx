@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, DollarSign, Download, FileText, ChevronRight, TrendingUp } from 'lucide-react';
+import { BarChart3, DollarSign, Download, FileText, ChevronRight, TrendingUp, Package, Calendar } from 'lucide-react';
 import { reportAPI, kmAPI, legalizationAPI } from '../services/api';
 import { fmt, fmtNum, monthName } from '../utils/helpers';
 
 export default function ReportesPage() {
   const [dashboard, setDashboard] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingPack, setDownloadingPack] = useState(false);
   const [legalizations, setLegalizations] = useState([]);
+  const [packMonth, setPackMonth] = useState(new Date().getMonth() + 1);
+  const [packYear, setPackYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     reportAPI.dashboard().then(r => setDashboard(r.data)).catch(() => {});
@@ -52,6 +55,20 @@ export default function ReportesPage() {
       URL.revokeObjectURL(url);
     } catch { alert('Error al generar Excel'); }
     setDownloading(false);
+  };
+
+  const downloadMonthlyPack = async () => {
+    setDownloadingPack(true);
+    try {
+      const { data } = await reportAPI.downloadMonthlyPack(packYear, packMonth);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Paquete_${monthName(packMonth - 1)}_${packYear}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al generar paquete mensual'); }
+    setDownloadingPack(false);
   };
 
   const desglose = [
@@ -138,6 +155,50 @@ export default function ReportesPage() {
             <ChevronRight size={16} className="text-slate-300" />
           </button>
         ))}
+      </div>
+
+      {/* Monthly Pack Download */}
+      <div className="card mx-4 mt-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><Package size={16} className="text-violet-500" /> Paquete Mensual</h3>
+        <p className="text-xs text-slate-400 mb-3">Descarga un ZIP con todos los documentos del mes: legalizaciones, movilidad y facturas electrónicas.</p>
+
+        <div className="flex gap-2 mb-3">
+          <div className="flex-1">
+            <label className="text-[10px] font-semibold text-slate-400 mb-1 block">Mes</label>
+            <select value={packMonth} onChange={e => setPackMonth(parseInt(e.target.value))}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white">
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i} value={i + 1}>{monthName(i)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="w-24">
+            <label className="text-[10px] font-semibold text-slate-400 mb-1 block">Año</label>
+            <select value={packYear} onChange={e => setPackYear(parseInt(e.target.value))}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white">
+              {[2025, 2026, 2027].map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <button onClick={downloadMonthlyPack} disabled={downloadingPack}
+          className="btn-primary w-full !py-3 !bg-violet-500 hover:!bg-violet-600 disabled:opacity-50">
+          {downloadingPack
+            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Generando...</>
+            : <><Download size={16} /> Descargar Paquete de {monthName(packMonth - 1)} {packYear}</>
+          }
+        </button>
+
+        <div className="mt-3 bg-violet-50 rounded-xl p-2.5">
+          <p className="text-[10px] font-bold text-violet-700 mb-1">El paquete incluye:</p>
+          <ul className="text-[10px] text-violet-600 space-y-0.5">
+            <li>- Excel de Registro de Transporte (movilidad)</li>
+            <li>- Excel(s) de Legalización de Gastos</li>
+            <li>- Facturas electrónicas vinculadas (PDF/XML)</li>
+          </ul>
+        </div>
       </div>
 
       {/* Trend */}

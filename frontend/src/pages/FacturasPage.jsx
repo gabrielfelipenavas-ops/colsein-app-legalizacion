@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2 } from 'lucide-react';
+import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink } from 'lucide-react';
 import { expenseAPI, emailAPI } from '../services/api';
 import { fmt } from '../utils/helpers';
 
@@ -40,11 +40,24 @@ const emptyForm = {
   justificacion_sin_soporte: '',
 };
 
-function EmailSearchSection({ expenses }) {
+function EmailSearchSection({ expenses, onMatchSaved }) {
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState(null);
   const [emailResults, setEmailResults] = useState(null);
+  const [savedMatches, setSavedMatches] = useState([]);
   const [error, setError] = useState('');
+  const [expandedEmail, setExpandedEmail] = useState(null);
+  const [linkingExpenseId, setLinkingExpenseId] = useState(null);
+  const [savingMatch, setSavingMatch] = useState(false);
+
+  useEffect(() => { loadSavedMatches(); }, []);
+
+  const loadSavedMatches = async () => {
+    try {
+      const { data } = await emailAPI.getMatches();
+      setSavedMatches(data);
+    } catch {}
+  };
 
   const autoMatch = async () => {
     setSearching(true);
@@ -52,6 +65,11 @@ function EmailSearchSection({ expenses }) {
     try {
       const { data } = await emailAPI.match();
       setMatches(data);
+      setEmailResults(null);
+      if (data.auto_saved > 0) {
+        loadSavedMatches();
+        onMatchSaved?.();
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Error al buscar en el correo');
     }
@@ -62,26 +80,79 @@ function EmailSearchSection({ expenses }) {
     setSearching(true);
     setError('');
     try {
-      const { data } = await emailAPI.search({ limit: 15 });
+      const { data } = await emailAPI.search({ limit: 20 });
       setEmailResults(data);
+      setMatches(null);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al buscar en el correo');
     }
     setSearching(false);
   };
 
+  const handleManualLink = async (email) => {
+    if (!linkingExpenseId) return;
+    setSavingMatch(true);
+    try {
+      await emailAPI.saveMatch({
+        expense_id: linkingExpenseId,
+        email_uid: email.id,
+        email_subject: email.subject,
+        email_from: email.from,
+        email_date: email.date,
+        nit_extracted: email.extracted?.nit || null,
+        valor_extracted: email.extracted?.valor || null,
+        numero_factura: email.extracted?.numero_factura || null,
+        attachments: email.attachments || [],
+        match_type: 'manual',
+        confidence: 0,
+      });
+      setLinkingExpenseId(null);
+      loadSavedMatches();
+      onMatchSaved?.();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al vincular');
+    }
+    setSavingMatch(false);
+  };
+
+  const handleUnlink = async (matchId) => {
+    if (!confirm('¿Desvincular esta factura electrónica del gasto?')) return;
+    try {
+      await emailAPI.deleteMatch(matchId);
+      loadSavedMatches();
+      onMatchSaved?.();
+    } catch {}
+  };
+
+  const downloadAttachment = async (uid, filename) => {
+    try {
+      const { data } = await emailAPI.downloadAttachment(uid, filename);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Error al descargar adjunto');
+    }
+  };
+
+  const matchedExpenseIds = new Set(savedMatches.map(m => m.expense_id));
+  const unmatchedExpenses = expenses.filter(e => !matchedExpenseIds.has(e.id));
+
   return (
     <div className="card mx-4 mt-3">
       <h3 className="flex items-center gap-2 text-sm font-bold mb-2"><Mail size={16} className="text-violet-500" /> Facturas Electrónicas (Correo)</h3>
-      <p className="text-xs text-slate-400 mb-3">Busca facturas electrónicas en el correo centralizado y relaciónolas con tus gastos.</p>
+      <p className="text-xs text-slate-400 mb-3">Busca facturas electrónicas en el correo y vinculalas con tus gastos.</p>
 
       <div className="flex gap-2 mb-3">
         <button onClick={autoMatch} disabled={searching || expenses.length === 0} className="btn-primary flex-1 !bg-violet-500 hover:!bg-violet-600 !py-2 !text-xs disabled:opacity-50">
           {searching ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Link2 size={14} />}
-          {searching ? 'Buscando...' : 'Cruzar con mis gastos'}
+          {searching ? 'Buscando...' : 'Cruzar automático'}
         </button>
         <button onClick={searchRecent} disabled={searching} className="btn-outline flex-1 !py-2 !text-xs disabled:opacity-50">
-          <Search size={14} /> Ver recientes
+          <Search size={14} /> Ver correos
         </button>
       </div>
 
@@ -91,21 +162,78 @@ function EmailSearchSection({ expenses }) {
         </div>
       )}
 
+      {/* Saved matches summary */}
+      {savedMatches.length > 0 && (
+        <div className="mb-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 mb-2">
+            <p className="text-xs font-semibold text-emerald-700">
+              <CheckCircle size={12} className="inline mr-1" />
+              {savedMatches.length} factura(s) electrónica(s) vinculada(s)
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            {savedMatches.map(m => (
+              <div key={m.id} className="flex items-center justify-between p-2 bg-emerald-50/50 rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-700 truncate">{m.Expense?.establecimiento || 'Gasto #' + m.expense_id}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{m.email_subject}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">{m.match_type === 'auto' ? 'Auto' : 'Manual'}</span>
+                    {m.confidence > 0 && <span className="text-[9px] text-emerald-600">{m.confidence}%</span>}
+                  </div>
+                </div>
+                <button onClick={() => handleUnlink(m.id)} className="text-red-400 hover:text-red-600 p-1 ml-2" title="Desvincular">
+                  <Unlink size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Manual linking mode */}
+      {linkingExpenseId && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold text-amber-700">
+              <Link2 size={12} className="inline mr-1" />
+              Selecciona un correo para vincular con el gasto
+            </p>
+            <button onClick={() => setLinkingExpenseId(null)} className="text-amber-500"><X size={16} /></button>
+          </div>
+          <p className="text-[10px] text-amber-600">
+            Gasto: {expenses.find(e => e.id === linkingExpenseId)?.establecimiento || '#' + linkingExpenseId}
+            {' · '}
+            {fmt(expenses.find(e => e.id === linkingExpenseId)?.valor || 0)}
+          </p>
+          {!emailResults && (
+            <button onClick={searchRecent} disabled={searching} className="btn-primary w-full mt-2 !py-2 !text-xs !bg-amber-500 hover:!bg-amber-600">
+              <Search size={14} /> Buscar correos para vincular
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Auto-match results */}
       {matches && (
-        <div className="space-y-2">
+        <div className="space-y-2 mb-3">
           <div className="bg-violet-50 rounded-xl p-2.5">
             <p className="text-xs font-semibold text-violet-700">
-              {matches.matches.length} coincidencia(s) encontrada(s) de {matches.total_expenses} gastos y {matches.total_emails} correos
+              {matches.matches.length} coincidencia(s) de {matches.total_expenses} gastos y {matches.total_emails} correos
+              {matches.auto_saved > 0 && <span className="text-emerald-600 ml-1">· {matches.auto_saved} guardada(s) automáticamente</span>}
             </p>
           </div>
           {matches.matches.length === 0 && (
-            <p className="text-xs text-slate-400 text-center py-2">No se encontraron coincidencias. Las facturas electrónicas pueden tardar en llegar al correo.</p>
+            <p className="text-xs text-slate-400 text-center py-2">No se encontraron coincidencias. Usa "Ver correos" para vincular manualmente.</p>
           )}
           {matches.matches.map((m, i) => (
             <div key={i} className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
               <div className="flex items-center gap-1 mb-1">
                 <CheckCircle size={12} className="text-emerald-500" />
-                <span className="text-[10px] font-bold text-emerald-700">Coincidencia ({m.confidence}%)</span>
+                <span className="text-[10px] font-bold text-emerald-700">
+                  Coincidencia ({m.confidence}%)
+                  {m.confidence >= 50 && <span className="ml-1 text-emerald-500">· Guardada</span>}
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
@@ -117,27 +245,139 @@ function EmailSearchSection({ expenses }) {
                   <p className="text-slate-400 truncate">{m.email.from}</p>
                 </div>
               </div>
+              {m.confidence < 50 && !matchedExpenseIds.has(m.expense_id) && (
+                <button onClick={() => emailAPI.saveMatch({
+                  expense_id: m.expense_id,
+                  email_uid: String(m.email.uid),
+                  email_subject: m.email.subject,
+                  email_from: m.email.from,
+                  email_date: m.email.date,
+                  nit_extracted: m.email.nit,
+                  valor_extracted: m.email.valor,
+                  attachments: [],
+                  match_type: 'manual',
+                  confidence: m.confidence,
+                }).then(() => { loadSavedMatches(); onMatchSaved?.(); })}
+                  className="mt-2 text-[10px] font-bold text-violet-600 underline">
+                  Confirmar y guardar este cruce
+                </button>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {emailResults && !matches && (
+      {/* Email results list — expandable */}
+      {emailResults && (
         <div className="space-y-2">
-          {emailResults.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No se encontraron facturas recientes en el correo.</p>}
-          {emailResults.map((email, i) => (
-            <div key={i} className="p-2.5 bg-slate-50 rounded-xl">
-              <div className="flex items-center gap-2">
-                {email.hasXml && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">XML</span>}
-                {email.hasPdf && <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">PDF</span>}
-                <span className="text-[10px] text-slate-400">{new Date(email.date).toLocaleDateString('es-CO')}</span>
+          <div className="bg-slate-100 rounded-xl p-2.5">
+            <p className="text-xs font-semibold text-slate-600">{emailResults.length} correo(s) con facturas</p>
+          </div>
+          {emailResults.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No se encontraron facturas recientes.</p>}
+          {emailResults.map((email, i) => {
+            const isExpanded = expandedEmail === i;
+            return (
+              <div key={i} className={`rounded-xl border transition-all ${linkingExpenseId ? 'border-amber-200 hover:border-amber-400 cursor-pointer' : 'border-slate-200'}`}>
+                <div
+                  className={`p-2.5 ${linkingExpenseId ? 'hover:bg-amber-50' : 'hover:bg-slate-50'} rounded-xl`}
+                  onClick={() => linkingExpenseId ? null : setExpandedEmail(isExpanded ? null : i)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {email.hasXml && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded shrink-0">XML</span>}
+                      {email.hasPdf && <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">PDF</span>}
+                      <span className="text-[10px] text-slate-400 shrink-0">{new Date(email.date).toLocaleDateString('es-CO')}</span>
+                    </div>
+                    {!linkingExpenseId && (
+                      isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />
+                    )}
+                  </div>
+                  <p className="text-xs font-bold text-slate-700 truncate mt-1">{email.subject}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{email.from}</p>
+                  {email.extracted?.nit && <span className="text-[10px] text-violet-600 mr-2">NIT: {email.extracted.nit}</span>}
+                  {email.extracted?.valor && <span className="text-[10px] text-emerald-600">Valor: {fmt(email.extracted.valor)}</span>}
+
+                  {/* Manual linking button */}
+                  {linkingExpenseId && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleManualLink(email); }}
+                      disabled={savingMatch}
+                      className="mt-2 btn-primary w-full !py-2 !text-xs !bg-amber-500 hover:!bg-amber-600 disabled:opacity-50"
+                    >
+                      {savingMatch ? 'Vinculando...' : <><Link2 size={12} /> Vincular con este correo</>}
+                    </button>
+                  )}
+                </div>
+
+                {/* Expanded details */}
+                {isExpanded && !linkingExpenseId && (
+                  <div className="px-2.5 pb-2.5 border-t border-slate-100 pt-2">
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-slate-400">De:</span>
+                        <span className="text-slate-700 font-semibold truncate ml-2">{email.from}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-slate-400">Fecha:</span>
+                        <span className="text-slate-700 font-semibold">{new Date(email.date).toLocaleString('es-CO')}</span>
+                      </div>
+                      {email.extracted?.numero_factura && (
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-slate-400">No. Factura:</span>
+                          <span className="text-slate-700 font-semibold">{email.extracted.numero_factura}</span>
+                        </div>
+                      )}
+                      {email.extracted?.cufe && (
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-slate-400">CUFE:</span>
+                          <span className="text-slate-700 font-semibold text-[9px] truncate ml-2">{email.extracted.cufe}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Attachments */}
+                    {email.attachments?.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-[10px] font-bold text-slate-500 mb-1">Adjuntos:</p>
+                        {email.attachments.map((att, j) => (
+                          <button key={j} onClick={() => downloadAttachment(email.id, att.filename)}
+                            className="flex items-center gap-2 w-full p-1.5 bg-blue-50 rounded-lg mb-1 hover:bg-blue-100 transition-colors text-left">
+                            <Download size={12} className="text-blue-500 shrink-0" />
+                            <span className="text-[10px] font-semibold text-blue-700 truncate">{att.filename}</span>
+                            <span className="text-[9px] text-blue-400 shrink-0">{att.size ? Math.round(att.size / 1024) + 'KB' : ''}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="text-xs font-bold text-slate-700 truncate mt-1">{email.subject}</p>
-              <p className="text-[10px] text-slate-400 truncate">{email.from}</p>
-              {email.extracted?.nit && <p className="text-[10px] text-violet-600 mt-0.5">NIT: {email.extracted.nit}</p>}
-              {email.extracted?.valor && <p className="text-[10px] text-emerald-600">Valor: {fmt(email.extracted.valor)}</p>}
-            </div>
-          ))}
+            );
+          })}
+        </div>
+      )}
+
+      {/* Quick link buttons on unmatched expenses */}
+      {unmatchedExpenses.length > 0 && !linkingExpenseId && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <p className="text-[10px] font-bold text-slate-500 mb-2">Gastos sin factura electrónica ({unmatchedExpenses.length}):</p>
+          <div className="space-y-1">
+            {unmatchedExpenses.slice(0, 5).map(exp => (
+              <div key={exp.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">{exp.establecimiento || 'Sin nombre'}</p>
+                  <p className="text-[10px] text-slate-400">{exp.fecha} · {fmt(exp.valor)}</p>
+                </div>
+                <button onClick={() => { setLinkingExpenseId(exp.id); if (!emailResults) searchRecent(); }}
+                  className="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-lg hover:bg-violet-100 shrink-0 ml-2">
+                  <Link2 size={10} className="inline mr-0.5" /> Vincular
+                </button>
+              </div>
+            ))}
+            {unmatchedExpenses.length > 5 && (
+              <p className="text-[10px] text-slate-400 text-center">y {unmatchedExpenses.length - 5} más...</p>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -564,7 +804,7 @@ export default function FacturasPage() {
       )}
 
       {/* Buscar facturas en correo */}
-      <EmailSearchSection expenses={expenses} />
+      <EmailSearchSection expenses={expenses} onMatchSaved={loadExpenses} />
 
       <div className="card mx-4 mt-3">
         <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><FileText size={16} className="text-colsein-500" /> Documentos Soportados</h3>

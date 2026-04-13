@@ -97,6 +97,9 @@ export const emailAPI = {
   search: (params) => api.get('/email/search', { params }),
   match: () => api.post('/email/match'),
   downloadAttachment: (uid, filename) => api.get(`/email/attachment/${uid}/${filename}`, { responseType: 'blob' }),
+  getMatches: (params) => api.get('/email/matches', { params }),
+  saveMatch: (data) => api.post('/email/save-match', data),
+  deleteMatch: (id) => api.delete(`/email/match/${id}`),
 };
 
 // ── REPORTS ──
@@ -104,6 +107,7 @@ export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),
   downloadKmExcel: (reportId) => api.get(`/reports/kilometraje/${reportId}/excel`, { responseType: 'blob' }),
   downloadLegalizacionExcel: (legId) => api.get(`/reports/legalizacion/${legId}/excel`, { responseType: 'blob' }),
+  downloadMonthlyPack: (year, month) => api.get(`/reports/monthly-pack/${year}/${month}`, { responseType: 'blob' }),
 };
 
 // ── CONFIG ──
