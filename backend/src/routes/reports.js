@@ -102,6 +102,51 @@ router.get('/dashboard', auth, async (req, res) => {
   }
 });
 
+// GET /api/reports/diagnose-images — check expense image storage status
+router.get('/diagnose-images', auth, async (req, res) => {
+  try {
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const resolvedDir = path.resolve(uploadDir);
+    const dirExists = fs.existsSync(resolvedDir);
+
+    const expenses = await db.Expense.findAll({
+      where: { user_id: req.user.id },
+      order: [['fecha', 'DESC']],
+      limit: 50,
+    });
+
+    const results = expenses.map(e => {
+      const imgPath = e.imagen_url?.startsWith('/uploads/')
+        ? path.resolve(uploadDir, e.imagen_url.replace('/uploads/', ''))
+        : null;
+      const exists = imgPath ? fs.existsSync(imgPath) : false;
+      return {
+        id: e.id,
+        fecha: e.fecha,
+        establecimiento: e.establecimiento,
+        imagen_url: e.imagen_url,
+        resolvedPath: imgPath,
+        fileExists: exists,
+      };
+    });
+
+    const totalWithUrl = results.filter(r => r.imagen_url).length;
+    const totalExisting = results.filter(r => r.fileExists).length;
+
+    res.json({
+      uploadDir,
+      resolvedDir,
+      dirExists,
+      cwd: process.cwd(),
+      summary: { total: expenses.length, withImageUrl: totalWithUrl, filesFound: totalExisting },
+      expenses: results,
+    });
+  } catch (err) {
+    console.error('Diagnose error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/reports/monthly-pack/:year/:month — download ZIP with all monthly documents
 router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
   try {

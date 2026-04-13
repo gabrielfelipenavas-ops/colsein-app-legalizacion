@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const path = require('path');
 
 // GET /api/expenses
 router.get('/', auth, async (req, res) => {
@@ -23,7 +24,9 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
   try {
     const data = { ...req.body, user_id: req.user.id };
     if (req.file) {
-      data.imagen_url = `/uploads/${req.file.path.split('/').slice(-2).join('/')}`;
+      const uploadDir = process.env.UPLOAD_DIR || './uploads';
+      const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
+      data.imagen_url = `/uploads/${rel}`;
     }
     if (data.datos_ocr && typeof data.datos_ocr === 'string') {
       data.datos_ocr = JSON.parse(data.datos_ocr);

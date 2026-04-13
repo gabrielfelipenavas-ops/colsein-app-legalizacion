@@ -494,29 +494,53 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
         ? path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''))
         : null;
 
-      if (imgPath && fs.existsSync(imgPath)) {
+      const exists = imgPath && fs.existsSync(imgPath);
+      if (!exists) {
+        console.warn(`[excelGenerator] Image not found for expense ${exp.id}: ${imgPath} (imagen_url=${exp.imagen_url})`);
+      }
+
+      if (exists) {
         const ext = path.extname(imgPath).toLowerCase().replace('.', '');
-        if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) {
-          try {
-            const imgId = wb.addImage({ filename: imgPath, extension: ext === 'jpg' ? 'jpeg' : ext });
-            ws3.addImage(imgId, {
-              tl: { col: 1, row: imgRow - 1 },
-              ext: { width: 350, height: 250 },
-            });
-            // Reserve rows for the image
-            for (let r = 0; r < 14; r++) ws3.getRow(imgRow + r).height = 18;
-            imgRow += 15;
-          } catch (imgErr) {
-            ws3.getCell(imgRow, 2).value = '[Error al cargar imagen]';
+        try {
+          let imgBuffer;
+          let extension;
+          if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) {
+            imgBuffer = fs.readFileSync(imgPath);
+            extension = ext === 'jpg' ? 'jpeg' : ext;
+          } else if (['webp', 'heic', 'heif'].includes(ext)) {
+            // Convert to PNG using sharp
+            const sharp = require('sharp');
+            imgBuffer = await sharp(imgPath).png().toBuffer();
+            extension = 'png';
+          } else if (ext === 'pdf') {
+            ws3.getCell(imgRow, 2).value = `[Archivo PDF: ${path.basename(imgPath)}]`;
+            ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9 };
             imgRow += 2;
+            continue;
+          } else {
+            ws3.getCell(imgRow, 2).value = `[Formato no soportado: ${ext}]`;
+            ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9, color: { argb: '999999' } };
+            imgRow += 2;
+            continue;
           }
-        } else {
-          ws3.getCell(imgRow, 2).value = `[Archivo PDF: ${path.basename(imgPath)}]`;
-          ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9 };
+
+          const imgId = wb.addImage({ buffer: imgBuffer, extension });
+          ws3.addImage(imgId, {
+            tl: { col: 1, row: imgRow - 1 },
+            ext: { width: 350, height: 250 },
+          });
+          for (let r = 0; r < 14; r++) ws3.getRow(imgRow + r).height = 18;
+          imgRow += 15;
+        } catch (imgErr) {
+          console.error(`[excelGenerator] Error embedding image ${imgPath}:`, imgErr.message);
+          ws3.getCell(imgRow, 2).value = `[Error al cargar imagen: ${imgErr.message}]`;
+          ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9, color: { argb: 'CC0000' } };
           imgRow += 2;
         }
       } else {
-        ws3.getCell(imgRow, 2).value = exp.observaciones?.includes('[SIN SOPORTE') ? '[Sin soporte — ver justificación en observaciones]' : '[Imagen no disponible]';
+        ws3.getCell(imgRow, 2).value = exp.observaciones?.includes('[SIN SOPORTE')
+          ? '[Sin soporte — ver justificación en observaciones]'
+          : `[Imagen no disponible: ${exp.imagen_url || 'sin ruta'}]`;
         ws3.getCell(imgRow, 2).font = { name: 'Arial', italic: true, size: 9, color: { argb: '999999' } };
         imgRow += 2;
       }
