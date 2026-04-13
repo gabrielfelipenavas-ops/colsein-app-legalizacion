@@ -572,11 +572,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved }) {
           ) : (
             <>
               <button onClick={onClose} className="btn-outline flex-1 !py-2.5 !text-xs">Cerrar</button>
-              {expense.legalization_id ? (
-                <div className="flex-1 text-center text-[10px] text-slate-400 py-2.5">Ya legalizado</div>
-              ) : (
-                <button onClick={() => setEditing(true)} className="btn-primary flex-1 !py-2.5 !text-xs"><Edit size={14} /> Editar</button>
-              )}
+              <button onClick={() => setEditing(true)} className="btn-primary flex-1 !py-2.5 !text-xs"><Edit size={14} /> Editar</button>
             </>
           )}
         </div>

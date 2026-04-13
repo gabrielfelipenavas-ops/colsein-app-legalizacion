@@ -19,8 +19,13 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
-  cb(null, allowed.includes(file.mimetype));
+  // Accept any image/*, PDF, or common octet-stream (some phones send HEIC this way)
+  const mt = (file.mimetype || '').toLowerCase();
+  const ext = (file.originalname || '').toLowerCase().split('.').pop();
+  const okMime = mt.startsWith('image/') || mt === 'application/pdf' || mt === 'application/octet-stream';
+  const okExt = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'pdf'].includes(ext);
+  if (okMime || okExt) return cb(null, true);
+  cb(new Error(`Tipo de archivo no soportado: ${mt || ext}`), false);
 };
 
 const upload = multer({
