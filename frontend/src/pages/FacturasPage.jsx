@@ -478,7 +478,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
           {/* Imagen */}
           {(newPreview || imageSrc) && !isPdf && (
             <div className="bg-slate-100 rounded-xl overflow-hidden">
-              <img src={newPreview || imageSrc} alt="Soporte" className="w-full max-h-80 object-contain" onError={e => { e.target.style.display = 'none'; }} />
+              <img src={newPreview || imageSrc} alt="Soporte" className="w-full max-h-40 sm:max-h-56 object-contain" onError={e => { e.target.style.display = 'none'; }} />
             </div>
           )}
           {isPdf && !newFile && (
@@ -531,6 +531,18 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                       Revisa los campos y ajusta lo que haga falta antes de guardar.
                     </p>
                   )}
+                  {/* Botón guardar inline — visible inmediatamente tras subir foto */}
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="mt-2 w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 disabled:opacity-50 shadow-md"
+                  >
+                    {saving
+                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Guardando...</>
+                      : <><Save size={16} /> Guardar cambios</>
+                    }
+                  </button>
                 </div>
               )}
             </div>
