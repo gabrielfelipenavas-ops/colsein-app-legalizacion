@@ -404,6 +404,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
   const [saving, setSaving] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [ocrDone, setOcrDone] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const runOCR = async () => {
@@ -476,9 +477,36 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {/* Imagen */}
-          {(newPreview || imageSrc) && !isPdf && (
-            <div className="bg-slate-100 rounded-xl overflow-hidden">
-              <img src={newPreview || imageSrc} alt="Soporte" className="w-full max-h-40 sm:max-h-56 object-contain" onError={e => { e.target.style.display = 'none'; }} />
+          {(newPreview || imageSrc) && !isPdf && !imgError && (
+            <div className="bg-slate-100 rounded-xl overflow-hidden relative">
+              <img
+                src={newPreview || imageSrc}
+                alt="Soporte"
+                className="w-full max-h-56 sm:max-h-72 object-contain"
+                onError={() => { if (!newPreview) setImgError(true); }}
+              />
+              {imageSrc && !newPreview && (
+                <a href={imageSrc} target="_blank" rel="noopener noreferrer"
+                   className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+                  <ExternalLink size={10} /> Abrir
+                </a>
+              )}
+            </div>
+          )}
+          {imgError && imageSrc && !newPreview && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={14} className="text-red-500 shrink-0" />
+                <span className="text-xs font-bold text-red-700">La imagen no se puede mostrar aquí</span>
+              </div>
+              <p className="text-[10px] text-red-600 mb-2">
+                Puede ser un formato que el navegador no renderiza (ej. HEIC) o el archivo ya no está disponible en el servidor.
+              </p>
+              <a href={imageSrc} target="_blank" rel="noopener noreferrer"
+                 className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
+                <ExternalLink size={12} /> Intentar abrir en una pestaña nueva
+              </a>
+              <p className="text-[9px] text-slate-400 mt-2 break-all">Ruta: {imageSrc}</p>
             </div>
           )}
           {isPdf && !newFile && (

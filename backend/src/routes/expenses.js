@@ -20,10 +20,34 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/expenses — create expense (with optional image)
+// Helper: convert non-browser-friendly formats (HEIC/HEIF) to JPG on upload
+async function normalizeUploadedImage(file) {
+  if (!file) return file;
+  const name = (file.originalname || '').toLowerCase();
+  const mt = (file.mimetype || '').toLowerCase();
+  const needsConversion =
+    name.endsWith('.heic') || name.endsWith('.heif') ||
+    mt === 'image/heic' || mt === 'image/heif';
+  if (!needsConversion) return file;
+  try {
+    const sharp = require('sharp');
+    const newPath = file.path.replace(/\.(heic|heif)$/i, '.jpg');
+    await sharp(file.path).jpeg({ quality: 88 }).toFile(newPath);
+    try { require('fs').unlinkSync(file.path); } catch {}
+    file.path = newPath;
+    file.mimetype = 'image/jpeg';
+    file.originalname = file.originalname.replace(/\.(heic|heif)$/i, '.jpg');
+  } catch (err) {
+    console.warn('[normalize] HEIC conversion failed, leaving original:', err.message);
+  }
+  return file;
+}
+
 router.post('/', auth, upload.single('imagen'), async (req, res) => {
   try {
     const data = { ...req.body, user_id: req.user.id };
     if (req.file) {
+      await normalizeUploadedImage(req.file);
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       data.imagen_url = `/uploads/${rel}`;
@@ -179,6 +203,7 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
+      await normalizeUploadedImage(req.file);
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       updates.imagen_url = `/uploads/${rel}`;
