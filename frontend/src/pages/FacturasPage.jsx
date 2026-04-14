@@ -402,7 +402,45 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
   const [newFile, setNewFile] = useState(null);
   const [newPreview, setNewPreview] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrDone, setOcrDone] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const runOCR = async () => {
+    if (!newFile || !newFile.type.startsWith('image/')) return;
+    setOcrProcessing(true);
+    setOcrDone(false);
+    try {
+      const { data } = await expenseAPI.ocr(newFile);
+      const d = data.ocr_data || {};
+      const catMap = {
+        'Alimentación': 'alimentacion',
+        'Alojamiento': 'alojamiento',
+        'Transportes': 'transportes',
+        'Imprevistos': 'imprevistos',
+        'Gastos de Representación': 'representacion',
+      };
+      setForm(prev => ({
+        ...prev,
+        categoria: catMap[d.tipo_gasto] || prev.categoria,
+        fecha: d.fecha || prev.fecha,
+        establecimiento: d.establecimiento || prev.establecimiento,
+        nit_establecimiento: d.nit || prev.nit_establecimiento,
+        direccion: d.direccion || prev.direccion,
+        valor: d.valor_total ? String(d.valor_total) : prev.valor,
+        iva: d.iva ? String(d.iva) : prev.iva,
+        medio_pago: d.medio_pago === 'Tarjeta Débito' ? 'tarjeta_debito'
+          : d.medio_pago === 'Tarjeta Crédito' ? 'tarjeta_credito'
+          : d.medio_pago === 'Efectivo' ? 'efectivo' : prev.medio_pago,
+        numero_factura: d.numero_factura || prev.numero_factura,
+        cufe: d.cufe || prev.cufe,
+      }));
+      setOcrDone(true);
+    } catch (err) {
+      alert('No se pudo procesar con OCR. Los campos no cambiaron.');
+    }
+    setOcrProcessing(false);
+  };
 
   const isPdf = expense.imagen_url?.toLowerCase().endsWith('.pdf');
   const imageSrc = expense.imagen_url ? (expense.imagen_url.startsWith('/') ? expense.imagen_url : `/${expense.imagen_url}`) : null;
@@ -424,15 +462,15 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between z-10">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md h-[95dvh] sm:h-auto sm:max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="shrink-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-bold">
             {editing ? <><Edit size={16} className="text-colsein-500" /> Editar gasto</> : <><Eye size={16} className="text-colsein-500" /> Detalle del gasto</>}
           </h3>
           <button onClick={onClose} className="text-slate-400"><X size={20} /></button>
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {/* Imagen */}
           {(newPreview || imageSrc) && !isPdf && (
             <div className="bg-slate-100 rounded-xl overflow-hidden">
@@ -461,12 +499,35 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                 const f = e.target.files?.[0];
                 if (f) {
                   setNewFile(f);
+                  setOcrDone(false);
                   if (f.type.startsWith('image/')) setNewPreview(URL.createObjectURL(f));
                   else setNewPreview(null);
                 }
               }} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white" />
               {newFile && (
-                <p className="text-[10px] text-emerald-600 mt-1">Nuevo: {newFile.name}</p>
+                <div className="mt-2">
+                  <p className="text-[10px] text-emerald-600">Nuevo: {newFile.name}</p>
+                  {newFile.type.startsWith('image/') && (
+                    <button
+                      type="button"
+                      onClick={runOCR}
+                      disabled={ocrProcessing}
+                      className="mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50"
+                    >
+                      {ocrProcessing
+                        ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Procesando con IA...</>
+                        : ocrDone
+                          ? <><CheckCircle size={12} /> Campos rellenados — volver a escanear</>
+                          : <><Camera size={12} /> Escanear para rellenar los campos</>
+                      }
+                    </button>
+                  )}
+                  {ocrDone && (
+                    <p className="text-[10px] text-emerald-600 mt-1 text-center">
+                      Revisa los campos y ajusta lo que haga falta antes de guardar.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -561,18 +622,18 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
           )}
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex gap-2">
+        <div className="shrink-0 bg-white border-t border-slate-100 p-4 flex gap-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {editing ? (
             <>
-              <button onClick={() => setEditing(false)} className="btn-outline flex-1 !py-2.5 !text-xs">Cancelar</button>
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 !py-2.5 !text-xs">
-                {saving ? 'Guardando...' : <><Save size={14} /> Guardar</>}
+              <button onClick={() => setEditing(false)} className="btn-outline flex-1 !py-3 !text-xs">Cancelar</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 !py-3 !text-xs !bg-emerald-500 hover:!bg-emerald-600">
+                {saving ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Guardando...</> : <><Save size={14} /> Guardar cambios</>}
               </button>
             </>
           ) : (
             <>
-              <button onClick={onClose} className="btn-outline flex-1 !py-2.5 !text-xs">Cerrar</button>
-              <button onClick={() => setEditing(true)} className="btn-primary flex-1 !py-2.5 !text-xs"><Edit size={14} /> Editar</button>
+              <button onClick={onClose} className="btn-outline flex-1 !py-3 !text-xs">Cerrar</button>
+              <button onClick={() => setEditing(true)} className="btn-primary flex-1 !py-3 !text-xs"><Edit size={14} /> Editar</button>
             </>
           )}
         </div>
