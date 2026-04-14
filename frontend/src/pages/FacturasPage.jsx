@@ -384,8 +384,8 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
   );
 }
 
-function ExpenseDetailModal({ expense, onClose, onSaved }) {
-  const [editing, setEditing] = useState(false);
+function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) {
+  const [editing, setEditing] = useState(initialEdit);
   const [form, setForm] = useState({
     categoria: expense.categoria || 'otro',
     fecha: expense.fecha || '',
@@ -595,6 +595,7 @@ export default function FacturasPage() {
   const [expenses, setExpenses] = useState([]);
   const [validationError, setValidationError] = useState('');
   const [selectedExpense, setSelectedExpense] = useState(null);
+  const [openInEdit, setOpenInEdit] = useState(false);
 
   useEffect(() => { loadExpenses(); }, []);
 
@@ -982,28 +983,44 @@ export default function FacturasPage() {
           <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><DollarSign size={16} className="text-emerald-500" /> Gastos Registrados ({expenses.length})</h3>
           <div className="space-y-2">
             {expenses.map(exp => (
-              <div key={exp.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <button onClick={() => setSelectedExpense(exp)} className="flex-1 min-w-0 text-left flex items-center gap-2">
+              <div key={exp.id} className="p-3 bg-slate-50 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
                   {exp.imagen_url && !exp.imagen_url.toLowerCase().endsWith('.pdf') ? (
-                    <img src={exp.imagen_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" onError={e => { e.target.style.display = 'none'; }} />
+                    <img src={exp.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
                   ) : exp.imagen_url ? (
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={14} className="text-blue-500" /></div>
+                    <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={16} className="text-blue-500" /></div>
                   ) : (
-                    <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-slate-400" /></div>
+                    <div className="w-12 h-12 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0"><ImageIcon size={16} className="text-amber-500" /></div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
                       <span className="text-[10px] text-slate-400">{exp.fecha}</span>
-                      {exp.observaciones?.includes('[SIN SOPORTE') && <AlertTriangle size={12} className="text-amber-500" />}
+                      {exp.observaciones?.includes('[SIN SOPORTE') && (
+                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Sin soporte</span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
+                    <p className="text-xs text-slate-700 font-semibold truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
+                    <p className="text-sm font-extrabold text-slate-800">{fmt(exp.valor)}</p>
                   </div>
-                </button>
-                <div className="flex items-center gap-2 ml-2">
-                  <span className="text-sm font-bold text-slate-800">{fmt(exp.valor)}</span>
-                  <button onClick={() => setSelectedExpense(exp)} className="text-colsein-500 hover:text-colsein-700 p-1" title="Ver/Editar"><Eye size={14} /></button>
-                  <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setSelectedExpense(exp); setOpenInEdit(false); }}
+                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors">
+                    <Eye size={12} /> Ver
+                  </button>
+                  <button
+                    onClick={() => { setSelectedExpense(exp); setOpenInEdit(true); }}
+                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors">
+                    <Edit size={12} /> Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(exp.id)}
+                    className="px-3 py-2 rounded-lg bg-white border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
+                    title="Eliminar">
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1017,7 +1034,8 @@ export default function FacturasPage() {
       {selectedExpense && (
         <ExpenseDetailModal
           expense={selectedExpense}
-          onClose={() => setSelectedExpense(null)}
+          initialEdit={openInEdit}
+          onClose={() => { setSelectedExpense(null); setOpenInEdit(false); }}
           onSaved={loadExpenses}
         />
       )}
