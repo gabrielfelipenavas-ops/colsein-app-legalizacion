@@ -327,14 +327,18 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md h-[95dvh] sm:h-auto sm:max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div
+        className="fixed inset-0 z-50 bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[90vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="shrink-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-bold"><Edit size={16} className="text-colsein-500" /> Editar Legalización #{legalization.id}</h3>
-          <button onClick={onClose} className="text-slate-400"><X size={20} /></button>
+          <button onClick={onClose} className="text-slate-400 p-1"><X size={22} /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <div>
             <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo</label>
             <div className="flex gap-1.5">
@@ -402,7 +406,7 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
