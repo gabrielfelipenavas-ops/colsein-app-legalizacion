@@ -231,6 +231,20 @@ const Trip = sequelize.define('Trip', {
   total_km_confirmado: { type: Sequelize.DECIMAL(10, 2), allowNull: true },
 }, { tableName: 'trips', underscored: true });
 
+// ── AuthRequest (Solicitud de autorización: taxis/apps y gastos especiales) ──
+const AuthRequest = sequelize.define('AuthRequest', {
+  user_id: { type: Sequelize.INTEGER, allowNull: false },
+  tipo: { type: Sequelize.ENUM('taxi', 'gasto_especial'), allowNull: false, defaultValue: 'taxi' },
+  concepto: { type: Sequelize.STRING(300), allowNull: false },
+  monto: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+  detalle: Sequelize.TEXT,
+  ref_tipo: Sequelize.STRING(30),
+  ref_id: Sequelize.INTEGER,
+  estado: { type: Sequelize.ENUM('pendiente', 'autorizado', 'rechazado'), defaultValue: 'pendiente' },
+  autorizado_por: Sequelize.INTEGER,
+  comentarios: Sequelize.TEXT,
+}, { tableName: 'authorization_requests', underscored: true });
+
 // ── ASSOCIATIONS ──
 User.hasMany(KilometrageReport, { foreignKey: 'user_id' });
 KilometrageReport.belongsTo(User, { foreignKey: 'user_id' });
@@ -264,6 +278,9 @@ User.hasMany(Trip, { foreignKey: 'user_id' });
 Trip.belongsTo(User, { foreignKey: 'user_id' });
 Trip.belongsTo(KilometrageReport, { foreignKey: 'report_id' });
 
+User.hasMany(AuthRequest, { foreignKey: 'user_id' });
+AuthRequest.belongsTo(User, { foreignKey: 'user_id' });
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 db.User = User;
@@ -278,5 +295,6 @@ db.Approval = Approval;
 db.EmailMatch = EmailMatch;
 db.Notification = Notification;
 db.Trip = Trip;
+db.AuthRequest = AuthRequest;
 
 module.exports = db;

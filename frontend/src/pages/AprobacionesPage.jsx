@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User } from 'lucide-react';
-import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI } from '../services/api';
+import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell } from 'lucide-react';
+import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 
@@ -374,9 +374,11 @@ function Modal({ title, children, onClose }) {
 export default function AprobacionesPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState('legalizaciones');
-  const [items, setItems] = useState({ kilometrajes: [], anticipos: [], legalizaciones: [] });
+  const [items, setItems] = useState({ kilometrajes: [], anticipos: [], legalizaciones: [], autorizaciones: [] });
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(null);
+
+  const esAutorizador = ['gerente_ventas', 'gerente_general', 'presidente'].includes(user?.rol);
 
   const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente'];
   const canApproveItem = (item) => {
@@ -401,12 +403,13 @@ export default function AprobacionesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [km, ant, leg] = await Promise.all([
+      const [km, ant, leg, autoriz] = await Promise.all([
         kmAPI.getPending().catch(() => ({ data: [] })),
         anticipoAPI.pending().catch(() => ({ data: [] })),
         legalizationAPI.pending().catch(() => ({ data: [] })),
+        esAutorizador ? authorizationAPI.pending().catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
-      setItems({ kilometrajes: km.data, anticipos: ant.data, legalizaciones: leg.data });
+      setItems({ kilometrajes: km.data, anticipos: ant.data, legalizaciones: leg.data, autorizaciones: autoriz.data });
     } finally {
       setLoading(false);
     }
@@ -430,11 +433,28 @@ export default function AprobacionesPage() {
     }
   };
 
+  const decidirAutorizacion = async (id, action, comentarios) => {
+    try {
+      await authorizationAPI.decide(id, action, comentarios);
+      await load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al procesar la autorización');
+    }
+  };
+
   const counts = {
     kilometrajes: items.kilometrajes.filter(r => ['enviado', 'revisado'].includes(r.estado)).length,
     anticipos: items.anticipos.filter(r => r.estado === 'enviado').length,
     legalizaciones: items.legalizaciones.filter(r => ['enviado', 'revisado'].includes(r.estado)).length,
+    autorizaciones: items.autorizaciones.filter(r => r.estado === 'pendiente').length,
   };
+
+  const TABS = [
+    { id: 'legalizaciones', label: 'Legalizaciones', icon: FileText },
+    { id: 'kilometrajes', label: 'Kilometraje', icon: Route },
+    { id: 'anticipos', label: 'Anticipos', icon: Briefcase },
+    ...(esAutorizador ? [{ id: 'autorizaciones', label: 'Autorizaciones', icon: Bell }] : []),
+  ];
 
   return (
     <>
@@ -443,12 +463,8 @@ export default function AprobacionesPage() {
         <p className="text-xs text-slate-400">Revisa y autoriza las solicitudes pendientes</p>
       </div>
 
-      <div className="px-4 mb-3 flex gap-1.5">
-        {[
-          { id: 'legalizaciones', label: 'Legalizaciones', icon: FileText },
-          { id: 'kilometrajes', label: 'Kilometraje', icon: Route },
-          { id: 'anticipos', label: 'Anticipos', icon: Briefcase },
-        ].map(t => (
+      <div className="px-4 mb-3 flex gap-1.5 overflow-x-auto">
+        {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -540,6 +556,33 @@ export default function AprobacionesPage() {
                     </div>
                   </div>
                 </button>
+              ))
+        )}
+
+        {!loading && tab === 'autorizaciones' && (
+          items.autorizaciones.filter(a => a.estado === 'pendiente').length === 0
+            ? <p className="text-center text-xs text-slate-400 py-12">No hay solicitudes de autorización pendientes.</p>
+            : items.autorizaciones.filter(a => a.estado === 'pendiente').map(sol => (
+                <div key={sol.id} className="card mb-2">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold flex items-center gap-1"><Bell size={13} className="text-violet-500" /> {sol.concepto}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{sol.User?.nombre} · {sol.User?.zona}</p>
+                      {sol.detalle && <p className="text-[10px] text-slate-400 mt-0.5">{sol.detalle}</p>}
+                    </div>
+                    {parseFloat(sol.monto) > 0 && <p className="text-sm font-extrabold text-colsein-600 shrink-0 ml-2">{fmt(parseFloat(sol.monto))}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { const c = prompt('Motivo del rechazo (obligatorio):'); if (c && c.trim()) decidirAutorizacion(sol.id, 'rechazar', c.trim()); }}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
+                      <XCircle size={14} /> Rechazar
+                    </button>
+                    <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1">
+                      <CheckCircle size={14} /> Autorizar
+                    </button>
+                  </div>
+                </div>
               ))
         )}
       </div>

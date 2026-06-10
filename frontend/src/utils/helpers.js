@@ -17,7 +17,12 @@ export const monthName = (m) =>
 
 export const TARIFAS = { CARRO: 600.65, MOTO: 507.03 };
 
-export const TIPOS_TAXI = ['Taxi convencional', 'Uber', 'InDriver', 'DiDi', 'Beat', 'Bus / Transmilenio', 'Otro transporte'];
+export const TIPOS_TAXI = ['Taxi convencional', 'Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify', 'Bus / Transmilenio', 'Otro transporte'];
+
+// Apps de transporte que SÍ requieren factura/soporte obligatorio.
+// El taxi convencional y el transporte público no exigen factura.
+export const APPS_TAXI_CON_FACTURA = ['Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify'];
+export const requiereFacturaTaxi = (tipo) => APPS_TAXI_CON_FACTURA.includes(tipo);
 
 export const PROCESOS = ['Ventas', 'Mercadeo', 'Gestión Integral', 'Administración y Finanzas'];
 

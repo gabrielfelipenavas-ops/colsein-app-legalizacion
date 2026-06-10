@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, Car, Bike, Plus, Check, Camera, Trash2, CheckCircle, AlertTriangle, MapPin, Receipt, Building2, DollarSign } from 'lucide-react';
-import { kmAPI, clientAPI } from '../services/api';
-import { fmt, fmtNum, TARIFAS, TIPOS_TAXI } from '../utils/helpers';
+import { kmAPI, clientAPI, authorizationAPI } from '../services/api';
+import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi } from '../utils/helpers';
 
 function PhotoUpload({ label, value, onChange, required, colorClass = 'border-emerald-500' }) {
   const ref = useRef(null);
@@ -45,6 +45,25 @@ export default function AddEntryModal({ onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const [creatingClient, setCreatingClient] = useState(false);
+  const [authState, setAuthState] = useState('idle'); // idle | sending | sent
+
+  const solicitarAutorizacionTaxi = async () => {
+    if (authState === 'sending') return;
+    setAuthState('sending');
+    try {
+      await authorizationAPI.request({
+        tipo: 'taxi',
+        concepto: `Taxi ${form.taxi_tipo || ''}: ${form.taxi_origen || ''} → ${form.taxi_destino || ''}`.trim(),
+        monto: parseInt(form.taxis) || 0,
+        detalle: `Cliente/visita: ${form.cliente_nombre || '—'}. Fecha: ${form.fecha}.`,
+        ref_tipo: 'kilometraje',
+      });
+      setAuthState('sent');
+    } catch (err) {
+      alert(err.response?.data?.error || 'No se pudo enviar la solicitud de autorización');
+      setAuthState('idle');
+    }
+  };
 
   const searchClients = async (q) => {
     setSearch(q);
@@ -83,7 +102,9 @@ export default function AddEntryModal({ onClose, onSaved }) {
 
   const peajeNeedsFoto = peajeVal > 0 && !photos.peaje;
   const parqNeedsFoto = parqVal > 0 && !photos.parqueadero;
-  const taxiNeedsFoto = taxiVal > 0 && !photos.taxi;
+  // La factura/soporte solo es OBLIGATORIA para apps (Uber/InDriver/DiDi/…).
+  // El taxi convencional y el transporte público no la exigen.
+  const taxiNeedsFoto = taxiVal > 0 && requiereFacturaTaxi(form.taxi_tipo) && !photos.taxi;
   const taxiNeedsInfo = taxiVal > 0 && (!form.taxi_tipo || !form.taxi_origen || !form.taxi_destino);
   const otrosNeedsFoto = otrosVal > 0 && !photos.otros;
   const missingFotos = peajeNeedsFoto || parqNeedsFoto || taxiNeedsFoto || otrosNeedsFoto;
@@ -227,8 +248,28 @@ export default function AddEntryModal({ onClose, onSaved }) {
               {form.taxi_origen && form.taxi_destino && (
                 <p className="p-2 bg-violet-100 rounded-lg text-[11px] text-violet-700 font-semibold flex items-center gap-1.5 mb-2.5"><MapPin size={12} /> {form.taxi_origen} → {form.taxi_destino}</p>
               )}
-              <PhotoUpload label="📸 Foto del recibo / captura de pantalla" value={photos.taxi} onChange={f => setPhotos(p => ({...p, taxi: f}))} required={!photos.taxi} colorClass="border-violet-500" />
-              <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Taxis requieren autorización previa. Para casos puntuales de visita a clientes.</p>
+              {/* Solicitar autorización (taxis requieren autorización previa) */}
+              {authState === 'sent' ? (
+                <p className="p-2 bg-emerald-50 rounded-lg text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5 mb-2.5">
+                  <CheckCircle size={12} /> Autorización solicitada al gerente comercial. Queda pendiente para la legalización.
+                </p>
+              ) : (
+                <button type="button" onClick={solicitarAutorizacionTaxi} disabled={authState === 'sending' || !form.taxi_tipo}
+                  className="w-full mb-2.5 py-2 rounded-xl border border-violet-300 text-violet-700 bg-white text-[11px] font-bold hover:bg-violet-50 disabled:opacity-50">
+                  {authState === 'sending' ? 'Enviando solicitud...' : '🔔 Solicitar autorización al gerente comercial'}
+                </button>
+              )}
+              <PhotoUpload
+                label={requiereFacturaTaxi(form.taxi_tipo) ? '📸 Factura / captura (obligatoria para apps)' : '📸 Soporte (opcional para taxi)'}
+                value={photos.taxi}
+                onChange={f => setPhotos(p => ({...p, taxi: f}))}
+                required={taxiNeedsFoto}
+                colorClass="border-violet-500"
+              />
+              {requiereFacturaTaxi(form.taxi_tipo)
+                ? <p className="mt-2 p-2 bg-red-50 rounded-lg text-[10px] text-red-700 leading-relaxed"><strong>{form.taxi_tipo}:</strong> requiere factura/soporte obligatorio.</p>
+                : <p className="mt-2 p-2 bg-emerald-50 rounded-lg text-[10px] text-emerald-700 leading-relaxed">El taxi convencional / transporte público no exige factura (soporte opcional).</p>}
+              <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Los taxis/apps requieren autorización previa. Puedes registrarlo igual; la autorización queda pendiente para la legalización.</p>
             </>
           )}
         </div>

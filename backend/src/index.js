@@ -79,6 +79,7 @@ app.use('/api/email', require('./routes/email'));
 app.use('/api/config', require('./routes/config'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/trips', require('./routes/trips'));
+app.use('/api/authorizations', require('./routes/authorizations'));
 
 // Health check
 app.get('/api/health', (req, res) => {

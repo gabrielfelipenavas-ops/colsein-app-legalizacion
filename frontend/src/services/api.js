@@ -63,6 +63,14 @@ export const tripAPI = {
   remove: (id) => api.delete(`/trips/${id}`),
 };
 
+// ── AUTORIZACIONES (taxis/apps y gastos especiales) ──
+export const authorizationAPI = {
+  list: () => api.get('/authorizations'),
+  pending: () => api.get('/authorizations/pending'),
+  request: (data) => api.post('/authorizations', data),
+  decide: (id, action, comentarios) => api.post(`/authorizations/${id}/decide`, { action, comentarios }),
+};
+
 // ── ANTICIPOS ──
 export const anticipoAPI = {
   list: () => api.get('/anticipos'),
