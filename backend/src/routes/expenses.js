@@ -66,6 +66,25 @@ function computeLegalizable({ valor, iva = 0, impoconsumo = 0, servicio = 0, pro
   return Math.round(legalizable * 100) / 100;
 }
 
+// Guarda/actualiza el establecimiento en el catálogo compartido para autocompletar.
+async function upsertEstablishment({ establecimiento, nit_establecimiento, direccion, categoria }) {
+  const nombre = (establecimiento || '').trim();
+  if (!nombre) return;
+  const norm = nombre.toLowerCase();
+  const [est, created] = await db.Establishment.findOrCreate({
+    where: { nombre_norm: norm },
+    defaults: { nombre, nombre_norm: norm, nit: nit_establecimiento || null, direccion: direccion || null, categoria: categoria || null, veces: 1 },
+  });
+  if (!created) {
+    await est.update({
+      veces: (est.veces || 0) + 1,
+      nit: est.nit || nit_establecimiento || null,
+      direccion: est.direccion || direccion || null,
+      categoria: categoria || est.categoria || null,
+    });
+  }
+}
+
 // GET /api/expenses
 router.get('/', auth, async (req, res) => {
   try {
@@ -138,6 +157,8 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
 
     data.valor_legalizable = computeLegalizable(data);
     const expense = await db.Expense.create(data);
+    // Guardar/actualizar el establecimiento en el catálogo (para autocompletar luego)
+    upsertEstablishment(data).catch(() => {});
     res.status(201).json(expense);
   } catch (err) {
     console.error('Crear gasto error:', err);

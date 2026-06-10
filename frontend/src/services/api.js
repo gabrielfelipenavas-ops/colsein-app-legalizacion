@@ -63,6 +63,11 @@ export const tripAPI = {
   remove: (id) => api.delete(`/trips/${id}`),
 };
 
+// ── ESTABLECIMIENTOS (catálogo para autocompletar) ──
+export const establishmentAPI = {
+  search: (search) => api.get('/establishments', { params: { search, limit: 8 } }),
+};
+
 // ── AUTORIZACIONES (taxis/apps y gastos especiales) ──
 export const authorizationAPI = {
   list: () => api.get('/authorizations'),

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
-import { expenseAPI, emailAPI } from '../services/api';
+import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
 import { fmt } from '../utils/helpers';
 
 const CATEGORIAS = [
@@ -703,6 +703,30 @@ export default function FacturasPage() {
   const [validationError, setValidationError] = useState('');
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [openInEdit, setOpenInEdit] = useState(false);
+  const [estResults, setEstResults] = useState([]);
+  const [showEst, setShowEst] = useState(false);
+
+  const searchEstablishments = async (q) => {
+    set('establecimiento', q);
+    if (q && q.trim().length >= 2) {
+      try {
+        const { data } = await establishmentAPI.search(q.trim());
+        setEstResults(data);
+        setShowEst(data.length > 0);
+      } catch { setEstResults([]); setShowEst(false); }
+    } else { setShowEst(false); }
+  };
+
+  const pickEstablishment = (e) => {
+    setForm(prev => ({
+      ...prev,
+      establecimiento: e.nombre,
+      nit_establecimiento: e.nit || prev.nit_establecimiento,
+      direccion: e.direccion || prev.direccion,
+      categoria: e.categoria || prev.categoria,
+    }));
+    setShowEst(false);
+  };
 
   useEffect(() => { loadExpenses(); }, []);
 
@@ -970,9 +994,24 @@ export default function FacturasPage() {
               <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold" />
             </div>
 
-            <div>
+            <div className="relative">
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Establecimiento</label>
-              <input type="text" value={form.establecimiento} onChange={e => set('establecimiento', e.target.value)} placeholder="Nombre del establecimiento" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              <input type="text" value={form.establecimiento}
+                onChange={e => searchEstablishments(e.target.value)}
+                onFocus={() => estResults.length > 0 && form.establecimiento && setShowEst(true)}
+                placeholder="Nombre del establecimiento" autoComplete="off"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+              {showEst && (
+                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl max-h-44 overflow-auto z-20 shadow-lg mt-1">
+                  {estResults.map(e => (
+                    <button key={e.id} type="button" onClick={() => pickEstablishment(e)}
+                      className="block w-full px-3 py-2 border-b border-slate-100 text-left hover:bg-slate-50">
+                      <p className="text-sm font-semibold text-slate-700">{e.nombre}</p>
+                      <p className="text-[10px] text-slate-400">{[e.nit && `NIT ${e.nit}`, e.direccion].filter(Boolean).join(' · ') || 'Guardado'}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">

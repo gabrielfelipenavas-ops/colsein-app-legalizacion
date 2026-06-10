@@ -235,6 +235,16 @@ const Trip = sequelize.define('Trip', {
   total_km_confirmado: { type: Sequelize.DECIMAL(10, 2), allowNull: true },
 }, { tableName: 'trips', underscored: true });
 
+// ── Establishment (catálogo de establecimientos/lugares ya usados) ──
+const Establishment = sequelize.define('Establishment', {
+  nombre: { type: Sequelize.STRING(300), allowNull: false },
+  nombre_norm: { type: Sequelize.STRING(300), allowNull: false, unique: true },
+  nit: Sequelize.STRING(30),
+  direccion: Sequelize.STRING(300),
+  categoria: Sequelize.STRING(40),
+  veces: { type: Sequelize.INTEGER, defaultValue: 1 },
+}, { tableName: 'establishments', underscored: true });
+
 // ── AuthRequest (Solicitud de autorización: taxis/apps y gastos especiales) ──
 const AuthRequest = sequelize.define('AuthRequest', {
   user_id: { type: Sequelize.INTEGER, allowNull: false },
@@ -300,5 +310,6 @@ db.EmailMatch = EmailMatch;
 db.Notification = Notification;
 db.Trip = Trip;
 db.AuthRequest = AuthRequest;
+db.Establishment = Establishment;
 
 module.exports = db;
