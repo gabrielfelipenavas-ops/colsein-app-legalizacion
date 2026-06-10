@@ -4,6 +4,49 @@ const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const path = require('path');
 
+const CATEGORIAS_VALIDAS = ['alojamiento', 'alimentacion', 'transportes', 'imprevistos', 'representacion', 'peaje', 'parqueadero', 'taxi', 'otro'];
+const MEDIOS_PAGO_VALIDOS = ['efectivo', 'tarjeta_debito', 'tarjeta_credito'];
+
+// Convierte un valor de dinero recibido del formulario a número >= 0 (o null).
+// Acepta strings vacíos (multipart los manda como "") y los trata como vacío.
+function toMoney(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseFloat(String(v).replace(',', '.'));
+  if (Number.isNaN(n)) return null;
+  return n;
+}
+
+// Construye SOLO los campos permitidos del gasto a partir del cuerpo de la
+// petición. Evita la "asignación masiva" (que el usuario fije validado, user_id,
+// legalization_id, etc.) y normaliza tipos para que columnas numéricas/JSON nunca
+// reciban strings vacíos (causa del error 500 al guardar con multipart/form-data).
+function buildExpenseData(body) {
+  const text = (v) => {
+    if (v === undefined || v === null) return undefined;
+    const s = String(v).trim();
+    return s === '' ? null : s;
+  };
+
+  const data = {};
+  const categoria = text(body.categoria);
+  if (categoria !== undefined) data.categoria = categoria;
+  if (text(body.fecha) !== undefined) data.fecha = text(body.fecha);
+  if (text(body.establecimiento) !== undefined) data.establecimiento = text(body.establecimiento);
+  if (text(body.nit_establecimiento) !== undefined) data.nit_establecimiento = text(body.nit_establecimiento);
+  if (text(body.direccion) !== undefined) data.direccion = text(body.direccion);
+  if (text(body.numero_factura) !== undefined) data.numero_factura = text(body.numero_factura);
+  if (text(body.cufe) !== undefined) data.cufe = text(body.cufe);
+  if (text(body.observaciones) !== undefined) data.observaciones = text(body.observaciones);
+
+  if (body.valor !== undefined) data.valor = toMoney(body.valor);
+  if (body.iva !== undefined) data.iva = toMoney(body.iva) || 0;
+
+  const mp = text(body.medio_pago);
+  if (mp !== undefined && MEDIOS_PAGO_VALIDOS.includes(mp)) data.medio_pago = mp;
+
+  return data;
+}
+
 // GET /api/expenses
 router.get('/', auth, async (req, res) => {
   try {
@@ -45,21 +88,40 @@ async function normalizeUploadedImage(file) {
 
 router.post('/', auth, upload.single('imagen'), async (req, res) => {
   try {
-    const data = { ...req.body, user_id: req.user.id };
+    const data = buildExpenseData(req.body);
+    data.user_id = req.user.id;
+
+    // Validaciones de negocio (en el servidor, no se confía en el navegador)
+    if (!data.categoria || !CATEGORIAS_VALIDAS.includes(data.categoria)) {
+      return res.status(400).json({ error: 'Selecciona una categoría válida para el gasto' });
+    }
+    if (!data.fecha) {
+      return res.status(400).json({ error: 'La fecha del gasto es obligatoria' });
+    }
+    if (data.valor === null || data.valor === undefined) {
+      return res.status(400).json({ error: 'El valor del gasto es obligatorio' });
+    }
+    if (data.valor <= 0) {
+      return res.status(400).json({ error: 'El valor del gasto debe ser mayor a cero' });
+    }
+
     if (req.file) {
       await normalizeUploadedImage(req.file);
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       data.imagen_url = `/uploads/${rel}`;
     }
-    if (data.datos_ocr && typeof data.datos_ocr === 'string') {
-      data.datos_ocr = JSON.parse(data.datos_ocr);
+
+    // datos_ocr puede llegar como string JSON; parsear con tolerancia a errores
+    if (req.body.datos_ocr && typeof req.body.datos_ocr === 'string') {
+      try { data.datos_ocr = JSON.parse(req.body.datos_ocr); } catch { /* ignorar OCR malformado */ }
     }
+
     const expense = await db.Expense.create(data);
     res.status(201).json(expense);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al crear gasto' });
+    console.error('Crear gasto error:', err);
+    res.status(500).json({ error: 'No se pudo guardar el gasto. Intenta de nuevo.' });
   }
 });
 

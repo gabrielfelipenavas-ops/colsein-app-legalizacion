@@ -18,20 +18,24 @@ const storage = multer.diskStorage({
   },
 });
 
+// Solo se aceptan imágenes y PDF. La validación se basa en la EXTENSIÓN (no en el
+// mimetype, que los teléfonos suelen reportar mal), porque la extensión es la que
+// determina cómo el navegador sirve el archivo. Esto bloquea archivos peligrosos
+// como .html o .svg que el navegador podría ejecutar (riesgo de XSS almacenado).
+const EXTENSIONES_PERMITIDAS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'pdf'];
+
 const fileFilter = (req, file, cb) => {
-  // Accept any image/*, PDF, or common octet-stream (some phones send HEIC this way)
-  const mt = (file.mimetype || '').toLowerCase();
   const ext = (file.originalname || '').toLowerCase().split('.').pop();
-  const okMime = mt.startsWith('image/') || mt === 'application/pdf' || mt === 'application/octet-stream';
-  const okExt = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'pdf'].includes(ext);
-  if (okMime || okExt) return cb(null, true);
-  cb(new Error(`Tipo de archivo no soportado: ${mt || ext}`), false);
+  if (EXTENSIONES_PERMITIDAS.includes(ext)) return cb(null, true);
+  cb(new Error('Tipo de archivo no permitido. Solo se aceptan imágenes (JPG, PNG, HEIC…) o PDF.'), false);
 };
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') },
+  // 25 MB por defecto: las fotos de celular modernas suelen pesar más de 10 MB,
+  // y rechazarlas hacía fallar el guardado del gasto con su soporte.
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '26214400') },
 });
 
 module.exports = upload;

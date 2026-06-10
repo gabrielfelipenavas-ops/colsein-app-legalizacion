@@ -33,8 +33,22 @@ const REF_LABEL = {
   legalizacion: 'Legalización de Gastos',
 };
 
+// Escapa caracteres HTML para evitar inyección de código en el correo
+function esc(s) {
+  if (s === undefined || s === null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function htmlTemplate({ titulo, mensaje, ref_tipo, ref_id, comentarios }) {
   const refLabel = REF_LABEL[ref_tipo] || '';
+  titulo = esc(titulo);
+  mensaje = esc(mensaje);
+  comentarios = comentarios ? esc(comentarios) : comentarios;
   const link = ref_tipo
     ? `${APP_URL}/${ref_tipo === 'kilometraje' ? 'km' : ref_tipo === 'anticipo' ? 'viajes' : 'legalizacion'}`
     : APP_URL;

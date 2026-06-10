@@ -3,6 +3,9 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
 
+// Roles que pueden ver/revisar legalizaciones de otros empleados
+const APROBADORES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
+
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
   try {
@@ -59,6 +62,10 @@ router.get('/:id', auth, async (req, res) => {
       ],
     });
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
+    // Solo el dueño o un aprobador pueden verla (evita ver legalizaciones ajenas por ID)
+    if (leg.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para ver esta legalización' });
+    }
     res.json(leg);
   } catch (err) {
     res.status(500).json({ error: 'Error' });
@@ -149,6 +156,9 @@ router.put('/:id/expenses', auth, async (req, res) => {
     const leg = await db.ExpenseLegalization.findByPk(req.params.id);
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
+    if (['enviado', 'revisado', 'aprobado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'No se pueden modificar los gastos de una legalización ya enviada o aprobada' });
+    }
 
     const { expense_ids } = req.body;
 
@@ -224,6 +234,9 @@ router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas'
   try {
     const leg = await db.ExpenseLegalization.findByPk(req.params.id);
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
+    if (!['enviado', 'revisado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar legalizaciones enviadas o en revisión' });
+    }
 
     const { action, comentarios } = req.body;
     if (action === 'rechazar' && !comentarios?.trim()) {

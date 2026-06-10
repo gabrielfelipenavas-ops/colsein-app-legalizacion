@@ -17,6 +17,8 @@ router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_i
 router.post('/', auth, requireRole('administrador'), async (req, res) => {
   try {
     const { nombre, cedula, email, password, rol, zona, vehiculo_tipo, placa, telefono, lider_regional_id } = req.body;
+    if (!nombre || !cedula || !email) return res.status(400).json({ error: 'Nombre, cédula y correo son obligatorios' });
+    if (!password || String(password).length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
     const password_hash = await bcrypt.hash(password, 12);
     const user = await db.User.create({ nombre, cedula, email, password_hash, rol, zona, vehiculo_tipo, placa, telefono, lider_regional_id });
     const { password_hash: _, ...userData } = user.toJSON();

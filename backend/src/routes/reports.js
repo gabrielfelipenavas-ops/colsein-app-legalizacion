@@ -3,6 +3,9 @@ const db = require('../models');
 const { Op } = require('sequelize');
 const { auth } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel } = require('../services/excelGenerator');
+
+// Roles que pueden descargar documentos de otros empleados
+const APROBADORES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
 const archiver = require('archiver');
 const path = require('path');
 const fs = require('fs');
@@ -17,6 +20,9 @@ router.get('/kilometraje/:reportId/excel', auth, async (req, res) => {
       ],
     });
     if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
+    if (report.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para descargar este reporte' });
+    }
 
     const tarifaCarro = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || process.env.TARIFA_CARRO || '600.65';
     const tarifaMoto = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || process.env.TARIFA_MOTO || '507.03';
@@ -48,6 +54,9 @@ router.get('/legalizacion/:id/excel', auth, async (req, res) => {
       ],
     });
     if (!leg) return res.status(404).json({ error: 'Legalización no encontrada' });
+    if (leg.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para descargar esta legalización' });
+    }
 
     const wb = await generateLegalizationExcel(leg, leg.expenses, leg.User, leg.TravelRequest);
     const filename = `Legalizacion_Gastos_${leg.User.nombre.replace(/\s/g, '_')}_${leg.id}.xlsx`;
@@ -74,6 +83,11 @@ router.get('/dashboard', auth, async (req, res) => {
       where: { user_id: userId, periodo_mes: mes, periodo_anio: anio },
     });
 
+    // Visitas del periodo actual (alineado con el reporte del mes, no con los últimos registros)
+    const currentReportVisitas = currentReport
+      ? await db.KilometrageEntry.count({ where: { report_id: currentReport.id } })
+      : 0;
+
     const pendingAnticipos = await db.TravelRequest.count({
       where: { user_id: userId, estado: ['enviado', 'aprobado', 'anticipo_girado'] },
     });
@@ -91,6 +105,7 @@ router.get('/dashboard', auth, async (req, res) => {
 
     res.json({
       current_report: currentReport,
+      current_report_visitas: currentReportVisitas,
       pending_anticipos: pendingAnticipos,
       recent_entries: recentEntries,
       year_reports: yearReports,

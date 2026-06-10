@@ -90,8 +90,8 @@ export default function ReportesPage() {
             <p className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Km Totales</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-extrabold text-emerald-600">{dashboard?.recent_entries?.length || 0}</p>
-            <p className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Visitas</p>
+            <p className="text-2xl font-extrabold text-emerald-600">{dashboard?.current_report_visitas ?? 0}</p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Visitas del mes</p>
           </div>
         </div>
 

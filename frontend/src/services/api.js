@@ -3,6 +3,9 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
+  // Si el servidor no responde en 60s, la petición falla con error (en vez de
+  // dejar la pantalla "congelada" para siempre sin avisar al usuario).
+  timeout: 60000,
 });
 
 // Inject token on every request
@@ -72,7 +75,8 @@ export const expenseAPI = {
   ocr: (file) => {
     const fd = new FormData();
     fd.append('imagen', file);
-    return api.post('/expenses/ocr', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    // El OCR puede tardar más (lectura de la imagen): se le da un timeout mayor.
+    return api.post('/expenses/ocr', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
   },
   delete: (id) => api.delete(`/expenses/${id}`),
 };

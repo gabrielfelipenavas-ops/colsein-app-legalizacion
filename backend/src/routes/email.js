@@ -13,7 +13,9 @@ const getImapConfig = () => ({
     host: process.env.IMAP_HOST,
     port: parseInt(process.env.IMAP_PORT || '993'),
     tls: true,
-    tlsOptions: { rejectUnauthorized: false },
+    // Validar el certificado del servidor de correo (evita ataques de interceptación).
+    // Solo se desactiva si explícitamente se configura IMAP_ALLOW_INSECURE_TLS=true.
+    tlsOptions: { rejectUnauthorized: process.env.IMAP_ALLOW_INSECURE_TLS !== 'true' },
     authTimeout: 15000,
   },
 });
@@ -127,7 +129,7 @@ router.get('/search', auth, async (req, res) => {
     res.json(results.slice(0, maxResults));
   } catch (err) {
     console.error('IMAP search error:', err);
-    res.status(500).json({ error: 'Error al conectar con el correo: ' + (err.message || err) });
+    res.status(500).json({ error: 'No se pudo conectar con el correo. Intenta de nuevo más tarde.' });
   }
 });
 
@@ -293,7 +295,7 @@ router.post('/match', auth, async (req, res) => {
     res.json({ total_expenses: expenses.length, total_emails: emailInvoices.length, matches, auto_saved: saved });
   } catch (err) {
     console.error('Match error:', err);
-    res.status(500).json({ error: 'Error al buscar coincidencias: ' + (err.message || err) });
+    res.status(500).json({ error: 'No se pudieron buscar coincidencias en el correo. Intenta de nuevo más tarde.' });
   }
 });
 

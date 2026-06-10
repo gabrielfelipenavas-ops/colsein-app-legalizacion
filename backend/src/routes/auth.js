@@ -38,8 +38,8 @@ router.get('/me', auth, (req, res) => {
 
 // PUT /api/auth/password
 router.put('/password', auth, [
-  body('current_password').isLength({ min: 4 }),
-  body('new_password').isLength({ min: 6 }),
+  body('current_password').isLength({ min: 1 }),
+  body('new_password').isLength({ min: 8 }).withMessage('La nueva contraseña debe tener al menos 8 caracteres'),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);

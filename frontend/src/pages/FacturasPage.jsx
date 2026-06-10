@@ -781,6 +781,7 @@ export default function FacturasPage() {
   };
 
   const handleSave = async () => {
+    if (saving) return; // evita doble envío (duplicados)
     const err = validate();
     if (err) { setValidationError(err); return; }
     setValidationError('');
@@ -816,10 +817,15 @@ export default function FacturasPage() {
       setFile(null);
       setForm(emptyForm);
       loadExpenses();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      alert('Error al guardar el gasto');
+      const msg = err.code === 'ECONNABORTED'
+        ? 'El servidor tardó demasiado en responder. Verifica si el gasto quedó guardado antes de reintentar.'
+        : (err.response?.data?.error || 'No se pudo guardar el gasto. Revisa tu conexión e intenta de nuevo.');
+      setValidationError(msg);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleDelete = async (id) => {

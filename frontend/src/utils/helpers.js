@@ -1,5 +1,8 @@
+// Formato de moneda COP. Muestra los centavos SOLO cuando el valor los tiene
+// (ej. $9.999,99), y sin decimales cuando es un entero (ej. $60.065). Así no se
+// "redondean" cifras en la visualización (evita descuadres al conciliar).
 export const fmt = (n) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 export const fmtNum = (n) => new Intl.NumberFormat('es-CO').format(n);
 

@@ -90,6 +90,17 @@ module.exports = {
         created_at: new Date(), updated_at: new Date(),
       };
     }));
+
+    // Reajustar las secuencias de IDs. Como arriba se insertaron filas con IDs
+    // explícitos (users 1-5, kilometrage_reports 1), PostgreSQL no avanza el
+    // contador automático y la PRÓXIMA inserción chocaría con "ya registrado".
+    // Esto lo evita dejando la secuencia en el máximo ID existente.
+    await queryInterface.sequelize.query(
+      "SELECT setval(pg_get_serial_sequence('users','id'), (SELECT MAX(id) FROM users))"
+    );
+    await queryInterface.sequelize.query(
+      "SELECT setval(pg_get_serial_sequence('kilometrage_reports','id'), (SELECT MAX(id) FROM kilometrage_reports))"
+    );
   },
 
   async down(queryInterface) {

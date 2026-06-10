@@ -5,6 +5,9 @@ const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
 
+// Roles que pueden ver/revisar reportes de otros empleados
+const APROBADORES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
+
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
   try {
@@ -32,6 +35,10 @@ router.get('/reports/:id', auth, async (req, res) => {
       include: [{ model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client }] }, { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona', 'vehiculo_tipo', 'placa'] }],
     });
     if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
+    // Solo el dueño o un aprobador pueden ver el reporte (evita ver datos ajenos por ID)
+    if (report.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para ver este reporte' });
+    }
     res.json(report);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener reporte' });
@@ -68,7 +75,22 @@ router.post('/entries', auth, [
     const tarifaMoto = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || process.env.TARIFA_MOTO || '507.03');
     const tarifa = medio === 'CARRO' ? tarifaCarro : tarifaMoto;
 
-    const totalKm = parseFloat(km_final) - parseFloat(km_inicial);
+    const kmIni = parseFloat(km_inicial);
+    const kmFin = parseFloat(km_final);
+    if (Number.isNaN(kmIni) || Number.isNaN(kmFin) || kmIni < 0 || kmFin < 0) {
+      return res.status(400).json({ error: 'Los kilómetros deben ser números válidos y no negativos' });
+    }
+    if (kmFin < kmIni) {
+      return res.status(400).json({ error: 'El kilometraje final no puede ser menor que el inicial' });
+    }
+    // Montos de apoyo no pueden ser negativos
+    for (const [campo, etiqueta] of [['peajes', 'peajes'], ['parqueaderos', 'parqueaderos'], ['taxis', 'taxis'], ['otros', 'otros']]) {
+      if (req.body[campo] !== undefined && parseFloat(req.body[campo]) < 0) {
+        return res.status(400).json({ error: `El valor de ${etiqueta} no puede ser negativo` });
+      }
+    }
+
+    const totalKm = kmFin - kmIni;
     const valorKm = Math.round(totalKm * tarifa * 100) / 100;
 
     const entry = await db.KilometrageEntry.create({
@@ -111,13 +133,37 @@ router.put('/entries/:id', auth, async (req, res) => {
     const tarifaCarro = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || '600.65');
     const tarifaMoto = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || '507.03');
 
-    if (req.body.km_inicial !== undefined && req.body.km_final !== undefined) {
-      const tarifa = (req.body.medio || entry.medio) === 'CARRO' ? tarifaCarro : tarifaMoto;
-      req.body.total_km = parseFloat(req.body.km_final) - parseFloat(req.body.km_inicial);
-      req.body.valor_km = Math.round(req.body.total_km * tarifa * 100) / 100;
+    // Lista blanca de campos editables (evita que el usuario fije valor_km, total_km,
+    // user_id, report_id, etc. directamente y se salte el cálculo por tarifa).
+    const editables = ['fecha', 'cliente_nombre', 'client_id', 'medio', 'km_inicial', 'km_final',
+      'peajes', 'parqueaderos', 'taxis', 'taxi_tipo', 'taxi_origen', 'taxi_destino', 'otros'];
+    const updates = {};
+    for (const k of editables) {
+      if (req.body[k] !== undefined) updates[k] = req.body[k];
     }
 
-    await entry.update(req.body);
+    // Validar montos no negativos
+    for (const campo of ['peajes', 'parqueaderos', 'taxis', 'otros']) {
+      if (updates[campo] !== undefined && parseFloat(updates[campo]) < 0) {
+        return res.status(400).json({ error: `El valor de ${campo} no puede ser negativo` });
+      }
+    }
+
+    // Recalcular total_km y valor_km en el servidor a partir de los km
+    const kmIni = updates.km_inicial !== undefined ? parseFloat(updates.km_inicial) : parseFloat(entry.km_inicial);
+    const kmFin = updates.km_final !== undefined ? parseFloat(updates.km_final) : parseFloat(entry.km_final);
+    if (Number.isNaN(kmIni) || Number.isNaN(kmFin) || kmIni < 0 || kmFin < 0) {
+      return res.status(400).json({ error: 'Los kilómetros deben ser números válidos y no negativos' });
+    }
+    if (kmFin < kmIni) {
+      return res.status(400).json({ error: 'El kilometraje final no puede ser menor que el inicial' });
+    }
+    const medioFinal = updates.medio || entry.medio;
+    const tarifa = medioFinal === 'CARRO' ? tarifaCarro : tarifaMoto;
+    updates.total_km = kmFin - kmIni;
+    updates.valor_km = Math.round(updates.total_km * tarifa * 100) / 100;
+
+    await entry.update(updates);
     await recalculateReport(entry.report_id);
 
     res.json(entry);
