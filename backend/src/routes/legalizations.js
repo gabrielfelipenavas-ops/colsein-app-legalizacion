@@ -188,7 +188,10 @@ router.put('/:id/expenses', auth, async (req, res) => {
 
     // Recalculate totals
     const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id } });
-    const gasto_real_total = expenses.reduce((sum, e) => sum + parseFloat(e.valor || 0), 0);
+    // Suma el valor legalizable (excluye propina y excedente de servicio); si un gasto
+    // antiguo no lo tiene, usa el valor total como respaldo.
+    const gasto_real_total = expenses.reduce((sum, e) =>
+      sum + (e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0)), 0);
     const valor_anticipo = parseFloat(leg.valor_anticipo || 0);
     const diff = gasto_real_total - valor_anticipo;
 

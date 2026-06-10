@@ -40,11 +40,30 @@ function buildExpenseData(body) {
 
   if (body.valor !== undefined) data.valor = toMoney(body.valor);
   if (body.iva !== undefined) data.iva = toMoney(body.iva) || 0;
+  if (body.impoconsumo !== undefined) data.impoconsumo = toMoney(body.impoconsumo) || 0;
+  if (body.servicio !== undefined) data.servicio = toMoney(body.servicio) || 0;
+  if (body.propina !== undefined) data.propina = toMoney(body.propina) || 0;
 
   const mp = text(body.medio_pago);
   if (mp !== undefined && MEDIOS_PAGO_VALIDOS.includes(mp)) data.medio_pago = mp;
 
   return data;
+}
+
+// Valor que SÍ cuenta para la legalización/reembolso:
+//  - La propina NO cuenta (se excluye por completo).
+//  - El servicio cuenta hasta el 10% de la base; el excedente NO cuenta.
+//  - El IVA y el impuesto al consumo (y demás impuestos) SÍ se reconocen.
+function computeLegalizable({ valor, iva = 0, impoconsumo = 0, servicio = 0, propina = 0 }) {
+  const v = Number(valor) || 0;
+  const _iva = Number(iva) || 0;
+  const _impo = Number(impoconsumo) || 0;
+  const _serv = Number(servicio) || 0;
+  const _prop = Number(propina) || 0;
+  const base = Math.max(0, v - _iva - _impo - _serv - _prop); // consumo neto
+  const servicioComputable = Math.min(_serv, base * 0.10);     // tope 10%
+  const legalizable = base + _iva + _impo + servicioComputable;
+  return Math.round(legalizable * 100) / 100;
 }
 
 // GET /api/expenses
@@ -117,6 +136,7 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
       try { data.datos_ocr = JSON.parse(req.body.datos_ocr); } catch { /* ignorar OCR malformado */ }
     }
 
+    data.valor_legalizable = computeLegalizable(data);
     const expense = await db.Expense.create(data);
     res.status(201).json(expense);
   } catch (err) {
@@ -258,10 +278,14 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
 
     const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
-      'direccion', 'valor', 'iva', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
+      'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
     const updates = {};
     for (const k of allowed) {
-      if (req.body[k] !== undefined) updates[k] = req.body[k];
+      if (req.body[k] !== undefined) {
+        updates[k] = ['valor', 'iva', 'impoconsumo', 'servicio', 'propina'].includes(k)
+          ? (toMoney(req.body[k]) || 0)
+          : req.body[k];
+      }
     }
 
     if (req.file) {
@@ -270,6 +294,15 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       updates.imagen_url = `/uploads/${rel}`;
     }
+
+    // Recalcular el valor legalizable con los valores combinados (existentes + cambios)
+    updates.valor_legalizable = computeLegalizable({
+      valor: updates.valor !== undefined ? updates.valor : expense.valor,
+      iva: updates.iva !== undefined ? updates.iva : expense.iva,
+      impoconsumo: updates.impoconsumo !== undefined ? updates.impoconsumo : expense.impoconsumo,
+      servicio: updates.servicio !== undefined ? updates.servicio : expense.servicio,
+      propina: updates.propina !== undefined ? updates.propina : expense.propina,
+    });
 
     await expense.update(updates);
     res.json(expense);

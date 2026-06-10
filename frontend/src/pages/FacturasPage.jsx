@@ -31,6 +31,8 @@ const emptyForm = {
   direccion: '',
   valor: '',
   iva: '',
+  impoconsumo: '',
+  servicio: '',
   propina: '',
   medio_pago: 'efectivo',
   numero_factura: '',
@@ -767,10 +769,17 @@ export default function FacturasPage() {
     if (openForm) setShowManual(true);
   };
 
-  const valorNeto = () => {
-    const val = parseFloat(form.valor) || 0;
-    const propina = parseFloat(form.propina) || 0;
-    return Math.max(0, val - propina);
+  // Valor que SÍ cuenta para la legalización: excluye la propina y el excedente de
+  // servicio sobre el 10%; reconoce IVA e impuesto al consumo. (Igual que el backend.)
+  const valorLegalizable = () => {
+    const v = parseFloat(form.valor) || 0;
+    const iva = parseFloat(form.iva) || 0;
+    const impo = parseFloat(form.impoconsumo) || 0;
+    const serv = parseFloat(form.servicio) || 0;
+    const prop = parseFloat(form.propina) || 0;
+    const base = Math.max(0, v - iva - impo - serv - prop);
+    const servComp = Math.min(serv, base * 0.10);
+    return Math.round((base + iva + impo + servComp) * 100) / 100;
   };
 
   const validate = () => {
@@ -788,23 +797,14 @@ export default function FacturasPage() {
     setSaving(true);
     try {
       const fd = new FormData();
-      // Send valor neto (minus propina) as the actual expense value
-      const propina = parseFloat(form.propina) || 0;
-      const entries = Object.entries(form);
-      entries.forEach(([k, v]) => {
-        if (k === 'sin_soporte') return;
-        if (k === 'valor' && propina > 0) {
-          fd.append('valor', String(valorNeto()));
-          return;
-        }
-        if (k === 'propina') return; // stored in observaciones
-        if (k === 'justificacion_sin_soporte') return;
-        if (v) fd.append(k, v);
+      // Se envía el valor TOTAL y el desglose (iva, impoconsumo, servicio, propina);
+      // el servidor calcula el valor legalizable (propina y excedente de servicio no cuentan).
+      Object.entries(form).forEach(([k, v]) => {
+        if (['sin_soporte', 'justificacion_sin_soporte', 'observaciones'].includes(k)) return;
+        if (v !== '' && v != null) fd.append(k, v);
       });
 
-      // Add propina and justification info to observaciones
       let obs = form.observaciones || '';
-      if (propina > 0) obs = `[Propina/Servicio: $${propina}] ${obs}`.trim();
       if (form.sin_soporte) obs = `[SIN SOPORTE: ${form.justificacion_sin_soporte}] ${obs}`.trim();
       if (obs) fd.append('observaciones', obs);
 
@@ -999,20 +999,31 @@ export default function FacturasPage() {
               </div>
             </div>
 
-            {/* Propina/Servicio — solo para alimentación */}
+            {/* Impuestos / servicio / propina — para alimentación (reglas de legalización) */}
             {form.categoria === 'alimentacion' && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-amber-700">Servicio / Propina (se descuenta del total)</label>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-bold text-amber-700">Impuestos y servicio (alimentación)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Imp. al consumo</label>
+                    <input type="number" value={form.impoconsumo} onChange={e => set('impoconsumo', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Servicio (máx 10%)</label>
+                    <input type="number" value={form.servicio} onChange={e => set('servicio', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                  </div>
                 </div>
-                <input type="number" value={form.propina} onChange={e => set('propina', e.target.value)} placeholder="$0"
-                  className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
-                {(parseFloat(form.propina) || 0) > 0 && (parseFloat(form.valor) || 0) > 0 && (
-                  <div className="flex justify-between mt-2 pt-2 border-t border-amber-200">
-                    <span className="text-xs font-semibold text-amber-700">Valor neto (sin propina)</span>
-                    <span className="text-sm font-extrabold text-amber-800">{fmt(valorNeto())}</span>
+                <div>
+                  <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Propina (no cuenta para legalización)</label>
+                  <input type="number" value={form.propina} onChange={e => set('propina', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                </div>
+                {(parseFloat(form.valor) || 0) > 0 && (
+                  <div className="flex justify-between pt-2 border-t border-amber-200">
+                    <span className="text-xs font-semibold text-amber-700">Valor que se legaliza</span>
+                    <span className="text-sm font-extrabold text-amber-800">{fmt(valorLegalizable())}</span>
                   </div>
                 )}
+                <p className="text-[10px] text-amber-600 leading-relaxed">La propina no se reconoce; el servicio se reconoce hasta el 10%. El IVA y el impuesto al consumo sí cuentan.</p>
               </div>
             )}
 
