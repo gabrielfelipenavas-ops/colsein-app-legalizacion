@@ -52,6 +52,17 @@ export const kmAPI = {
   getPending: () => api.get('/kilometraje/pending'),
 };
 
+// ── RECORRIDOS GPS (Trips) ──
+export const tripAPI = {
+  list: (params) => api.get('/trips', { params }),
+  start: (data) => api.post('/trips', data),            // { medio, fecha, punto:{lat,lng,label} }
+  addPoint: (id, punto) => api.post(`/trips/${id}/points`, punto),
+  undoLast: (id) => api.delete(`/trips/${id}/points/last`),
+  finish: (id, punto) => api.post(`/trips/${id}/finish`, punto ? { punto } : {}),
+  confirm: (id, total_km) => api.post(`/trips/${id}/confirm`, { total_km }),
+  remove: (id) => api.delete(`/trips/${id}`),
+};
+
 // ── ANTICIPOS ──
 export const anticipoAPI = {
   list: () => api.get('/anticipos'),

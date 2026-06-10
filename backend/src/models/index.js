@@ -215,6 +215,22 @@ const Notification = sequelize.define('Notification', {
   email_enviado: { type: Sequelize.BOOLEAN, defaultValue: false },
 }, { tableName: 'notifications', underscored: true });
 
+// ── Trip (Recorrido GPS) ──
+const Trip = sequelize.define('Trip', {
+  user_id: { type: Sequelize.INTEGER, allowNull: false },
+  report_id: { type: Sequelize.INTEGER, allowNull: true },
+  fecha: { type: Sequelize.DATEONLY, allowNull: false },
+  medio: { type: Sequelize.ENUM('CARRO', 'MOTO'), allowNull: false, defaultValue: 'CARRO' },
+  estado: { type: Sequelize.ENUM('en_curso', 'finalizado', 'confirmado'), defaultValue: 'en_curso' },
+  // puntos: [{ orden, tipo: 'salida'|'visita'|'regreso', label, lat, lng, ts }]
+  puntos: { type: Sequelize.JSONB, defaultValue: [] },
+  // legs: [{ km }] desglose por tramo (entre puntos consecutivos)
+  legs: { type: Sequelize.JSONB, defaultValue: [] },
+  metodo: { type: Sequelize.ENUM('ruta', 'interno'), allowNull: true },
+  total_km_estimado: { type: Sequelize.DECIMAL(10, 2), defaultValue: 0 },
+  total_km_confirmado: { type: Sequelize.DECIMAL(10, 2), allowNull: true },
+}, { tableName: 'trips', underscored: true });
+
 // ── ASSOCIATIONS ──
 User.hasMany(KilometrageReport, { foreignKey: 'user_id' });
 KilometrageReport.belongsTo(User, { foreignKey: 'user_id' });
@@ -244,6 +260,10 @@ EmailMatch.belongsTo(Expense, { foreignKey: 'expense_id' });
 User.hasMany(Notification, { foreignKey: 'user_id' });
 Notification.belongsTo(User, { foreignKey: 'user_id' });
 
+User.hasMany(Trip, { foreignKey: 'user_id' });
+Trip.belongsTo(User, { foreignKey: 'user_id' });
+Trip.belongsTo(KilometrageReport, { foreignKey: 'report_id' });
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 db.User = User;
@@ -257,5 +277,6 @@ db.Expense = Expense;
 db.Approval = Approval;
 db.EmailMatch = EmailMatch;
 db.Notification = Notification;
+db.Trip = Trip;
 
 module.exports = db;

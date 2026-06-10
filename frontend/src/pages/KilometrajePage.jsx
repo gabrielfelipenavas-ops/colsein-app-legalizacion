@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Plus, ArrowLeft, ArrowRight, Receipt, Car, Bike, CheckCircle, AlertTriangle, Send } from 'lucide-react';
+import { Plus, ArrowLeft, ArrowRight, Receipt, Car, Bike, CheckCircle, AlertTriangle, Send, Navigation } from 'lucide-react';
 import { kmAPI, reportAPI } from '../services/api';
 import { fmt, fmtNum, dateStr, calcKm, monthName } from '../utils/helpers';
 import AddEntryModal from '../components/AddEntryModal';
+import RecorridoModal from '../components/RecorridoModal';
 
 export default function KilometrajePage() {
   const [reports, setReports] = useState([]);
   const [period, setPeriod] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
   const [showAdd, setShowAdd] = useState(false);
+  const [showTrip, setShowTrip] = useState(false);
 
   const load = () => {
     kmAPI.getReports({ mes: period.month, anio: period.year }).then(r => setReports(r.data)).catch(() => {});
@@ -84,6 +86,11 @@ export default function KilometrajePage() {
           <button onClick={handleSubmit} className="btn-outline !px-3"><Send size={16} /></button>
         )}
       </div>
+      <div className="px-4 pt-2">
+        <button onClick={() => setShowTrip(true)} className="btn-outline w-full !border-colsein-500 !text-colsein-600 hover:!bg-colsein-50">
+          <Navigation size={16} /> Recorrido con GPS (estimar km)
+        </button>
+      </div>
 
       {/* Table */}
       <div className="card mx-4 mt-3 !p-3 overflow-x-auto">
@@ -153,6 +160,9 @@ export default function KilometrajePage() {
 
       {/* Add Entry Modal */}
       {showAdd && <AddEntryModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+
+      {/* Recorrido GPS Modal */}
+      {showTrip && <RecorridoModal onClose={() => setShowTrip(false)} onSaved={() => { setShowTrip(false); load(); }} />}
     </>
   );
 }
