@@ -5,7 +5,7 @@ const { auth } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel } = require('../services/excelGenerator');
 
 // Roles que pueden descargar documentos de otros empleados
-const APROBADORES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
+const { VISORES } = require('../roles');
 const archiver = require('archiver');
 const path = require('path');
 const fs = require('fs');
@@ -20,7 +20,7 @@ router.get('/kilometraje/:reportId/excel', auth, async (req, res) => {
       ],
     });
     if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
-    if (report.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+    if (report.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
       return res.status(403).json({ error: 'No tienes permiso para descargar este reporte' });
     }
 
@@ -54,7 +54,7 @@ router.get('/legalizacion/:id/excel', auth, async (req, res) => {
       ],
     });
     if (!leg) return res.status(404).json({ error: 'Legalización no encontrada' });
-    if (leg.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+    if (leg.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
       return res.status(403).json({ error: 'No tienes permiso para descargar esta legalización' });
     }
 

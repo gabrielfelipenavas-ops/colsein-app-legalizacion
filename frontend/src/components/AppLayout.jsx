@@ -3,7 +3,7 @@ import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, L
 import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
 
-const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
+const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
 
 const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },

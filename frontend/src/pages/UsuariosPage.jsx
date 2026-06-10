@@ -6,9 +6,12 @@ import { useAuth } from '../context/AuthContext';
 const ROLES = [
   { value: 'comercial', label: 'Comercial', color: 'bg-blue-100 text-blue-700' },
   { value: 'lider_regional', label: 'Líder Regional', color: 'bg-violet-100 text-violet-700' },
-  { value: 'gerente_ventas', label: 'Gerente Ventas', color: 'bg-amber-100 text-amber-700' },
+  { value: 'gerente_ventas', label: 'Gerente Ventas (Comercial)', color: 'bg-amber-100 text-amber-700' },
   { value: 'control_interno', label: 'Control Interno', color: 'bg-emerald-100 text-emerald-700' },
+  { value: 'contabilidad', label: 'Contabilidad', color: 'bg-teal-100 text-teal-700' },
   { value: 'administrador', label: 'Administrador', color: 'bg-red-100 text-red-700' },
+  { value: 'gerente_general', label: 'Gerente General', color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'presidente', label: 'Presidente', color: 'bg-slate-800 text-white' },
 ];
 
 const ZONAS = ['Eje Cafetero', 'Antioquia', 'Bogotá', 'Valle', 'Costa', 'Santander', 'Nacional'];

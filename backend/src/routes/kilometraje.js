@@ -4,9 +4,7 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
-
-// Roles que pueden ver/revisar reportes de otros empleados
-const APROBADORES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
+const { VISORES, APROBADORES } = require('../roles');
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -36,7 +34,7 @@ router.get('/reports/:id', auth, async (req, res) => {
     });
     if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
     // Solo el dueño o un aprobador pueden ver el reporte (evita ver datos ajenos por ID)
-    if (report.user_id !== req.user.id && !APROBADORES.includes(req.user.rol)) {
+    if (report.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
       return res.status(403).json({ error: 'No tienes permiso para ver este reporte' });
     }
     res.json(report);
@@ -225,7 +223,7 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
     const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const periodo = `${meses[report.periodo_mes - 1]} ${report.periodo_anio}`;
     const total = parseFloat(report.valor_total || 0).toLocaleString('es-CO');
-    notifyRoles(['lider_regional', 'gerente_ventas', 'administrador'], {
+    notifyRoles(['lider_regional', 'gerente_ventas', 'gerente_general'], {
       tipo: 'enviado',
       titulo: 'Nuevo reporte de kilometraje pendiente',
       mensaje: `${req.user.nombre} envió el Reporte de Kilometraje de ${periodo} por COP $${total}.`,
@@ -241,7 +239,7 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
 });
 
 // POST /api/kilometraje/reports/:id/approve — approve/reject (leader or manager)
-router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas', 'administrador'), async (req, res) => {
+router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
     const report = await db.KilometrageReport.findByPk(req.params.id);
     if (!report) return res.status(404).json({ error: 'No encontrado' });
@@ -277,7 +275,7 @@ router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente
 
     if (req.user.rol === 'lider_regional' && action === 'aprobar') {
       // Forward to gerente_ventas / admin for final approval
-      notifyRoles(['gerente_ventas', 'administrador'], {
+      notifyRoles(['gerente_ventas', 'gerente_general'], {
         tipo: 'enviado',
         titulo: 'Kilometraje revisado, pendiente de aprobación final',
         mensaje: `${req.user.nombre} revisó el Reporte de Kilometraje de ${periodo}. Pendiente de aprobación final.`,
@@ -307,12 +305,12 @@ router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente
 });
 
 // GET /api/kilometraje/pending — for leaders/managers: reports pending approval
-router.get('/pending', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
+router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     let estado;
     if (req.user.rol === 'lider_regional') estado = 'enviado';
-    else if (req.user.rol === 'administrador') estado = ['enviado', 'revisado', 'aprobado', 'rechazado'];
-    else estado = ['enviado', 'revisado'];
+    else if (req.user.rol === 'gerente_ventas') estado = ['enviado', 'revisado'];
+    else estado = ['enviado', 'revisado', 'aprobado', 'rechazado']; // gerente_general, presidente, control_interno, contabilidad: ven todo
 
     const reports = await db.KilometrageReport.findAll({
       where: { estado },

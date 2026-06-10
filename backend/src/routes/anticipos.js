@@ -3,6 +3,7 @@ const { body } = require('express-validator');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
+const { VISORES, APROBADORES } = require('../roles');
 
 // GET /api/anticipos
 router.get('/', auth, async (req, res) => {
@@ -21,11 +22,15 @@ router.get('/', auth, async (req, res) => {
 });
 
 // GET /api/anticipos/pending — for approvers
-router.get('/pending', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
+router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     const where = {};
-    if (req.user.rol === 'administrador') where.estado = ['enviado', 'aprobado', 'rechazado', 'anticipo_girado', 'legalizado'];
-    else where.estado = 'enviado';
+    // Aprobadores de primer nivel ven los "enviado"; auditoría/dirección ven todo
+    if (['gerente_general', 'presidente', 'control_interno', 'contabilidad'].includes(req.user.rol)) {
+      where.estado = ['enviado', 'aprobado', 'rechazado', 'anticipo_girado', 'legalizado'];
+    } else {
+      where.estado = 'enviado';
+    }
 
     const requests = await db.TravelRequest.findAll({
       where,
@@ -94,7 +99,7 @@ router.post('/', auth, [
     });
 
     const total = parseFloat(anticipo_total).toLocaleString('es-CO');
-    notifyRoles(['gerente_ventas', 'administrador'], {
+    notifyRoles(['gerente_ventas', 'gerente_general'], {
       tipo: 'enviado',
       titulo: 'Nueva solicitud de anticipo pendiente',
       mensaje: `${req.user.nombre} solicitó anticipo ${consecutivo} a ${ciudad_destino} por COP $${total}.`,
@@ -110,7 +115,7 @@ router.post('/', auth, [
 });
 
 // POST /api/anticipos/:id/approve
-router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas', 'administrador'), async (req, res) => {
+router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
     const request = await db.TravelRequest.findByPk(req.params.id);
     if (!request) return res.status(404).json({ error: 'No encontrado' });

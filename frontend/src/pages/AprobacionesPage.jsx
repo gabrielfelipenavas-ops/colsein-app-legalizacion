@@ -378,13 +378,24 @@ export default function AprobacionesPage() {
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(null);
 
+  const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente'];
   const canApproveItem = (item) => {
-    if (user?.rol === 'administrador') return true;
-    if (tab === 'kilometrajes') {
-      if (user?.rol === 'lider_regional') return item.estado === 'enviado';
-      return item.estado === 'revisado' || item.estado === 'enviado';
+    const rol = user?.rol;
+    // Administrador, control interno y contabilidad: solo lectura/auditoría, no aprueban
+    if (!APROBADORES.includes(rol)) return false;
+
+    if (tab === 'legalizaciones') {
+      // Jerarquía: legalizaciones de admin → gerente general/presidente; de gerente general → presidente
+      const emisor = item.User?.rol;
+      if (emisor === 'gerente_general' && rol !== 'presidente') return false;
+      if (emisor === 'administrador' && !['gerente_general', 'presidente'].includes(rol)) return false;
+      return ['enviado', 'revisado'].includes(item.estado);
     }
-    return item.estado === 'enviado' || item.estado === 'revisado';
+    if (tab === 'kilometrajes') {
+      if (rol === 'lider_regional') return item.estado === 'enviado';
+      return ['enviado', 'revisado'].includes(item.estado);
+    }
+    return item.estado === 'enviado'; // anticipos
   };
 
   const load = async () => {
