@@ -150,11 +150,30 @@ router.post('/ocr', auth, upload.single('imagen'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Imagen requerida' });
 
+    // Preprocesar la imagen mejora MUCHO la lectura del OCR (gratis, con sharp):
+    // corrige orientación, escala de grises, tamaño, contraste y nitidez.
+    let ocrPath = req.file.path;
+    try {
+      const sharp = require('sharp');
+      const processed = req.file.path + '_ocr.png';
+      await sharp(req.file.path)
+        .rotate()
+        .grayscale()
+        .resize({ width: 1600, withoutEnlargement: true })
+        .normalize()
+        .sharpen()
+        .toFile(processed);
+      ocrPath = processed;
+    } catch (e) { /* si sharp falla, se usa la imagen original */ }
+
     const Tesseract = require('tesseract.js');
-    const { data: { text } } = await Tesseract.recognize(req.file.path, 'spa', { logger: () => {} });
+    const { data: { text } } = await Tesseract.recognize(ocrPath, 'spa', { logger: () => {} });
+    if (ocrPath !== req.file.path) { try { require('fs').unlinkSync(ocrPath); } catch {} }
 
     const parsed = parseColombianReceipt(text);
-    const imagePath = `/uploads/${req.file.path.split('/').slice(-2).join('/')}`;
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
+    const imagePath = `/uploads/${rel}`;
 
     res.json({ ocr_data: parsed, imagen_url: imagePath, raw_text: text });
   } catch (err) {
@@ -217,10 +236,20 @@ function parseColombianReceipt(text) {
     }
   }
 
+  // Helper: convierte el grupo capturado (formato colombiano) a número
+  const numFrom = (m) => (m ? parseFloat(m[1].replace(/\./g, '').replace(',', '.')) : 0);
+
   // IVA
   const ivaMatch = full.match(/IVA[.:$\s]*\$?\s*([\d.,]+)/i) ||
                    full.match(/I\.?\s*V\.?\s*A\.?[.:$\s]*\$?\s*([\d.,]+)/i);
-  const iva = ivaMatch ? parseFloat(ivaMatch[1].replace(/\./g, '').replace(',', '.')) : 0;
+  const iva = numFrom(ivaMatch);
+
+  // Impuesto al consumo (INC) — común en alimentación
+  const impoconsumo = numFrom(full.match(/(?:IMPO?\.?\s*CONSUMO|IMPOCONSUMO|IMP\.?\s*CONSUMO|\bINC\b)[.:$%\s]*\$?\s*([\d.,]+)/i));
+  // Servicio (propina sugerida que se cobra como servicio)
+  const servicio = numFrom(full.match(/SERVICIO[.:$%\s]*\$?\s*([\d.,]+)/i));
+  // Propina explícita
+  const propina = numFrom(full.match(/PROPINA[.:$%\s]*\$?\s*([\d.,]+)/i));
 
   // Número de factura
   const facMatch = full.match(/(?:FACTURA|FAC|FV|No\.|NUM)[.:;\s#]*([A-Z0-9\-]{2,20})/i);
@@ -253,6 +282,9 @@ function parseColombianReceipt(text) {
     fecha,
     valor_total,
     iva,
+    impoconsumo,
+    servicio,
+    propina,
     numero_factura,
     cufe,
     medio_pago,
