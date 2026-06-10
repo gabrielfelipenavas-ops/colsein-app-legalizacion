@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { X, Car, Bike, Plus, Check, Camera, Trash2, CheckCircle, AlertTriangle, MapPin, Receipt, Building2, DollarSign } from 'lucide-react';
 import { kmAPI, clientAPI, authorizationAPI } from '../services/api';
 import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi } from '../utils/helpers';
+import MapKmPicker from './MapKmPicker';
 
 function PhotoUpload({ label, value, onChange, required, colorClass = 'border-emerald-500' }) {
   const ref = useRef(null);
@@ -46,6 +47,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
 
   const [creatingClient, setCreatingClient] = useState(false);
   const [authState, setAuthState] = useState('idle'); // idle | sending | sent
+  const [showMap, setShowMap] = useState(false);
 
   const solicitarAutorizacionTaxi = async () => {
     if (authState === 'sending') return;
@@ -189,10 +191,15 @@ export default function AddEntryModal({ onClose, onSaved }) {
         </div>
 
         {/* KM */}
-        <div className="grid grid-cols-2 gap-2.5 mb-3.5">
+        <div className="grid grid-cols-2 gap-2.5 mb-2">
           <div><label className="label-field">Km Inicial</label><input type="number" placeholder="0" value={form.km_inicial} onChange={e => u('km_inicial', e.target.value)} className="input-field font-mono" /></div>
           <div><label className="label-field">Km Final</label><input type="number" placeholder="0" value={form.km_final} onChange={e => u('km_final', e.target.value)} className="input-field font-mono" /></div>
         </div>
+        {/* Estimar en el mapa cuando no se tuvo odómetro */}
+        <button type="button" onClick={() => setShowMap(true)}
+          className="w-full mb-3.5 py-2 rounded-xl border border-colsein-300 text-colsein-600 bg-white text-[11px] font-bold hover:bg-colsein-50 flex items-center justify-center gap-1.5">
+          <MapPin size={13} /> ¿Sin odómetro? Estimar km en el mapa
+        </button>
 
         {totalKm > 0 && (
           <div className="bg-colsein-50 rounded-xl p-3.5 mb-4 flex justify-between items-center">
@@ -298,6 +305,13 @@ export default function AddEntryModal({ onClose, onSaved }) {
           {saving ? 'Guardando...' : 'Guardar Registro'}
         </button>
       </div>
+
+      {showMap && (
+        <MapKmPicker
+          onClose={() => setShowMap(false)}
+          onPick={(km) => { u('km_inicial', '0'); u('km_final', String(Math.round(km))); }}
+        />
+      )}
     </div>
   );
 }

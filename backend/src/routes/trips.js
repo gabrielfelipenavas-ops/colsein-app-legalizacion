@@ -37,6 +37,19 @@ async function recomputeTrip(trip) {
   return trip;
 }
 
+// POST /api/trips/estimate — estimar km de una lista de puntos (sin guardar nada).
+// Sirve para el registro manual de kilometraje cuando no hubo odómetro.
+router.post('/estimate', auth, async (req, res) => {
+  try {
+    const puntos = Array.isArray(req.body.puntos) ? req.body.puntos : [];
+    const est = await estimateRoute(puntos.map((p) => ({ lat: p.lat, lng: p.lng })));
+    res.json(est);
+  } catch (err) {
+    console.error('Estimate error:', err);
+    res.status(500).json({ error: 'No se pudo estimar la distancia' });
+  }
+});
+
 // GET /api/trips?mes&anio — recorridos del usuario
 router.get('/', auth, async (req, res) => {
   try {

@@ -61,6 +61,7 @@ export const tripAPI = {
   finish: (id, punto) => api.post(`/trips/${id}/finish`, punto ? { punto } : {}),
   confirm: (id, total_km) => api.post(`/trips/${id}/confirm`, { total_km }),
   remove: (id) => api.delete(`/trips/${id}`),
+  estimate: (puntos) => api.post('/trips/estimate', { puntos }),
 };
 
 // ── ESTABLECIMIENTOS (catálogo para autocompletar) ──
