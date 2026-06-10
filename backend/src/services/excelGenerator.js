@@ -550,4 +550,84 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   return wb;
 }
 
-module.exports = { generateKilometrageExcel, generateLegalizationExcel };
+// ── SOLICITUD DE ANTICIPO (imprimible para firma física) ──
+async function generateAnticipoExcel(request, user) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('ANTICIPO');
+  ws.columns = [{ width: 4 }, { width: 22 }, { width: 20 }, { width: 20 }, { width: 20 }, { width: 6 }];
+
+  const blue = '004A7C';
+  const lightBlue = 'E8F4FD';
+  const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  const money = '$#,##0';
+  const fdate = (d) => { if (!d) return ''; const x = new Date(d); return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`; };
+  const label = (cell, text) => { ws.getCell(cell).value = text; ws.getCell(cell).font = { name: 'Arial', bold: true, size: 9 }; };
+  const val = (cell, text) => { ws.getCell(cell).value = text; ws.getCell(cell).font = { name: 'Arial', size: 9 }; };
+
+  ws.mergeCells('B2:E3');
+  ws.getCell('B2').value = 'SOLICITUD DE ANTICIPO DE VIAJE\nCOLSEIN S.A.S. — NIT 800.002.030';
+  ws.getCell('B2').font = { name: 'Arial', bold: true, size: 12, color: { argb: blue } };
+  ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+  label('B5', 'Consecutivo:'); val('C5', request.consecutivo || '');
+  label('D5', 'Fecha solicitud:'); val('E5', fdate(request.fecha_solicitud));
+  label('B6', 'Solicitante:'); val('C6', user?.nombre || '');
+  label('D6', 'Cédula:'); val('E6', user?.cedula || '');
+  label('B7', 'Zona:'); val('C7', user?.zona || '');
+  label('D7', 'Proceso:'); val('E7', request.proceso || '');
+  label('B8', 'Destino:'); val('C8', `${request.ciudad_destino || ''} (${request.destino_tipo || ''})`);
+  label('D8', 'Duración:'); val('E8', `${request.duracion_dias || ''} día(s)`);
+  label('B9', 'Fecha ida:'); val('C9', fdate(request.fecha_ida));
+  label('D9', 'Fecha regreso:'); val('E9', fdate(request.fecha_regreso));
+  label('B10', 'Motivo:'); ws.mergeCells('C10:E10'); val('C10', request.motivo || '');
+
+  // Tabla de presupuesto por día
+  const hRow = 12;
+  ['Concepto', 'Valor por día', 'Días', 'Total'].forEach((h, i) => {
+    const c = ws.getCell(hRow, 2 + i);
+    c.value = h; c.font = { name: 'Arial', bold: true, size: 9, color: { argb: 'FFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } };
+    c.alignment = { horizontal: 'center' }; c.border = border;
+  });
+  const dias = request.duracion_dias || 1;
+  const conceptos = [
+    ['Alojamiento', request.alojamiento_dia], ['Alimentación', request.alimentacion_dia],
+    ['Transportes', request.transportes_dia], ['Imprevistos', request.imprevistos_dia],
+    ['Representación', request.representacion_dia],
+  ];
+  let r = hRow + 1;
+  conceptos.forEach(([nombre, v]) => {
+    const vd = parseFloat(v || 0);
+    ws.getCell(r, 2).value = nombre; ws.getCell(r, 2).font = { name: 'Arial', size: 9 };
+    ws.getCell(r, 3).value = vd; ws.getCell(r, 3).numFmt = money;
+    ws.getCell(r, 4).value = dias; ws.getCell(r, 4).alignment = { horizontal: 'center' };
+    ws.getCell(r, 5).value = vd * dias; ws.getCell(r, 5).numFmt = money;
+    for (let c = 2; c <= 5; c++) ws.getCell(r, c).border = border;
+    r++;
+  });
+  // Totales
+  ws.getCell(r, 2).value = 'PRESUPUESTO TOTAL'; ws.getCell(r, 2).font = { name: 'Arial', bold: true, size: 9 };
+  ws.mergeCells(r, 2, r, 4);
+  ws.getCell(r, 5).value = parseFloat(request.presupuesto_total || 0); ws.getCell(r, 5).numFmt = money;
+  ws.getCell(r, 5).font = { name: 'Arial', bold: true, size: 9 };
+  for (let c = 2; c <= 5; c++) { ws.getCell(r, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightBlue } }; ws.getCell(r, c).border = border; }
+  r++;
+  ws.getCell(r, 2).value = 'ANTICIPO SOLICITADO'; ws.getCell(r, 2).font = { name: 'Arial', bold: true, size: 10 };
+  ws.mergeCells(r, 2, r, 4);
+  ws.getCell(r, 5).value = parseFloat(request.anticipo_total || 0); ws.getCell(r, 5).numFmt = money;
+  ws.getCell(r, 5).font = { name: 'Arial', bold: true, size: 11, color: { argb: blue } };
+  for (let c = 2; c <= 5; c++) ws.getCell(r, c).border = border;
+
+  // Firmas
+  const sig = r + 3;
+  ws.getCell(sig, 2).value = 'SOLICITA (Comercial)'; ws.getCell(sig, 4).value = 'APRUEBA (Gerente Comercial / General)';
+  ws.getCell(sig, 2).font = ws.getCell(sig, 4).font = { name: 'Arial', bold: true, size: 9 };
+  ws.getCell(sig + 1, 2).value = 'Firma: ____________________';
+  ws.getCell(sig + 1, 4).value = 'Firma: ____________________';
+  ws.getCell(sig + 3, 2).value = `Nombre: ${user?.nombre || ''}`;
+  ws.getCell(sig + 3, 4).value = 'Nombre: ____________________';
+
+  return wb;
+}
+
+module.exports = { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel };

@@ -160,6 +160,7 @@ export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),
   downloadKmExcel: (reportId) => api.get(`/reports/kilometraje/${reportId}/excel`, { responseType: 'blob' }),
   downloadLegalizacionExcel: (legId) => api.get(`/reports/legalizacion/${legId}/excel`, { responseType: 'blob' }),
+  downloadAnticipoExcel: (id) => api.get(`/reports/anticipo/${id}/excel`, { responseType: 'blob' }),
   downloadMonthlyPack: (year, month) => api.get(`/reports/monthly-pack/${year}/${month}`, { responseType: 'blob' }),
 };
 

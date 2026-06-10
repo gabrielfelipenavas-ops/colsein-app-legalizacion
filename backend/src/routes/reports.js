@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { Op } = require('sequelize');
 const { auth } = require('../middleware/auth');
-const { generateKilometrageExcel, generateLegalizationExcel } = require('../services/excelGenerator');
+const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES } = require('../roles');
@@ -68,6 +68,28 @@ router.get('/legalizacion/:id/excel', auth, async (req, res) => {
   } catch (err) {
     console.error('Legalization Excel error:', err);
     res.status(500).json({ error: 'Error al generar Excel' });
+  }
+});
+
+// GET /api/reports/anticipo/:id/excel — solicitud de anticipo imprimible (firma física)
+router.get('/anticipo/:id/excel', auth, async (req, res) => {
+  try {
+    const anticipo = await db.TravelRequest.findByPk(req.params.id, {
+      include: [{ model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona'] }],
+    });
+    if (!anticipo) return res.status(404).json({ error: 'Anticipo no encontrado' });
+    if (anticipo.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para descargar este anticipo' });
+    }
+    const wb = await generateAnticipoExcel(anticipo, anticipo.User);
+    const filename = `Solicitud_Anticipo_${anticipo.consecutivo || anticipo.id}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error('Anticipo Excel error:', err);
+    res.status(500).json({ error: 'Error al generar el anticipo' });
   }
 });
 

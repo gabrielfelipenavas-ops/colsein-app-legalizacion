@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, DollarSign, Send, X, Calendar, Clock } from 'lucide-react';
-import { anticipoAPI } from '../services/api';
+import { Plus, DollarSign, Send, X, Calendar, Clock, Download } from 'lucide-react';
+import { anticipoAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, PROCESOS, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 
 function StatusBadge({ status }) {
@@ -130,9 +130,24 @@ function AnticipoModal({ onClose, onSaved }) {
 export default function ViajesPage() {
   const [anticipos, setAnticipos] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const load = () => { anticipoAPI.list().then(r => setAnticipos(r.data)).catch(() => {}); };
   useEffect(load, []);
+
+  const imprimirAnticipo = async (a) => {
+    setDownloadingId(a.id);
+    try {
+      const { data } = await reportAPI.downloadAnticipoExcel(a.id);
+      const url = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Solicitud_Anticipo_${a.consecutivo || a.id}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al generar la solicitud de anticipo'); }
+    setDownloadingId(null);
+  };
 
   return (
     <>
@@ -162,6 +177,10 @@ export default function ViajesPage() {
                   <p className="text-sm font-extrabold text-colsein-600 mt-1">{fmt(parseFloat(a.anticipo_total))}</p>
                 </div>
               </div>
+              <button onClick={() => imprimirAnticipo(a)} disabled={downloadingId === a.id}
+                className="mt-2 w-full py-2 rounded-lg border border-emerald-500 text-emerald-600 bg-white text-[11px] font-bold hover:bg-emerald-50 flex items-center justify-center gap-1.5 disabled:opacity-50">
+                <Download size={13} /> {downloadingId === a.id ? 'Generando...' : 'Imprimir solicitud (Excel firmable)'}
+              </button>
             </div>
           ))
         )}
