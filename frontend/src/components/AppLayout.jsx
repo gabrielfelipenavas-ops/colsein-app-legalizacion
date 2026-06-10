@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
-import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, LogOut } from 'lucide-react';
+import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, Calculator, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
 
@@ -15,6 +15,8 @@ const baseTabs = [
 ];
 
 const approverTab = { to: '/aprobaciones', icon: CheckSquare, label: 'Aprobar' };
+const contabilidadTab = { to: '/contabilidad', icon: Calculator, label: 'Contab.' };
+const CONTABLE_ROLES = ['contabilidad', 'administrador', 'gerente_general', 'presidente'];
 const adminTabs = [{ to: '/usuarios', icon: Users, label: 'Usuarios' }];
 
 export default function AppLayout() {
@@ -25,6 +27,7 @@ export default function AppLayout() {
   const tabs = [
     ...baseTabs,
     ...(isApprover ? [approverTab] : []),
+    ...(CONTABLE_ROLES.includes(user?.rol) ? [contabilidadTab] : []),
     ...(user?.rol === 'administrador' ? adminTabs : []),
   ];
 

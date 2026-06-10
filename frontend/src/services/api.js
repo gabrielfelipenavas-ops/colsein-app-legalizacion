@@ -64,6 +64,14 @@ export const tripAPI = {
   estimate: (puntos) => api.post('/trips/estimate', { puntos }),
 };
 
+// ── CONTABILIDAD (mapeo + auditoría + archivo plano NetSuite) ──
+export const accountingAPI = {
+  mappings: () => api.get('/accounting/mappings'),
+  updateMapping: (id, data) => api.put(`/accounting/mappings/${id}`, data),
+  monthAudit: (year, month) => api.get(`/accounting/legalizations/${year}/${month}`),
+  downloadFlat: (year, month) => api.get(`/accounting/netsuite/${year}/${month}`, { responseType: 'blob' }),
+};
+
 // ── ESTABLECIMIENTOS (catálogo para autocompletar) ──
 export const establishmentAPI = {
   search: (search) => api.get('/establishments', { params: { search, limit: 8 } }),

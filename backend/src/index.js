@@ -81,6 +81,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/trips', require('./routes/trips'));
 app.use('/api/authorizations', require('./routes/authorizations'));
 app.use('/api/establishments', require('./routes/establishments'));
+app.use('/api/accounting', require('./routes/accounting'));
 
 // Health check
 app.get('/api/health', (req, res) => {

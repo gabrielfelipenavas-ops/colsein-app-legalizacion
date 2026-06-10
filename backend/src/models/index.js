@@ -235,6 +235,16 @@ const Trip = sequelize.define('Trip', {
   total_km_confirmado: { type: Sequelize.DECIMAL(10, 2), allowNull: true },
 }, { tableName: 'trips', underscored: true });
 
+// ── AccountingMapping (mapeo contable para el archivo plano de NetSuite) ──
+const AccountingMapping = sequelize.define('AccountingMapping', {
+  categoria: { type: Sequelize.STRING(40), allowNull: false, unique: true },
+  concepto_tributario: { type: Sequelize.STRING(40), defaultValue: 'COMPRAS' }, // SERVICIOS | COMPRAS
+  cuenta: Sequelize.STRING(30),
+  cuenta_id: Sequelize.STRING(30),
+  codigo_iva: Sequelize.STRING(40),
+  descripcion: Sequelize.STRING(200),
+}, { tableName: 'accounting_mappings', underscored: true });
+
 // ── Establishment (catálogo de establecimientos/lugares ya usados) ──
 const Establishment = sequelize.define('Establishment', {
   nombre: { type: Sequelize.STRING(300), allowNull: false },
@@ -311,5 +321,6 @@ db.Notification = Notification;
 db.Trip = Trip;
 db.AuthRequest = AuthRequest;
 db.Establishment = Establishment;
+db.AccountingMapping = AccountingMapping;
 
 module.exports = db;
