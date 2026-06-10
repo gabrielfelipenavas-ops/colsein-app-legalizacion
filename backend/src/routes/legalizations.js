@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
+const { notify, notifyRoles } = require('../services/notifications');
 
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
@@ -20,6 +21,30 @@ router.get('/', auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener legalizaciones' });
+  }
+});
+
+// GET /api/legalizations/pending — for approvers
+router.get('/pending', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
+  try {
+    const where = {};
+    if (req.user.rol === 'lider_regional') where.estado = 'enviado';
+    else if (req.user.rol === 'administrador') where.estado = ['enviado', 'revisado', 'aprobado', 'rechazado'];
+    else where.estado = ['enviado', 'revisado'];
+
+    const legalizations = await db.ExpenseLegalization.findAll({
+      where,
+      include: [
+        { model: db.User, attributes: ['id', 'nombre', 'zona', 'email'] },
+        { model: db.TravelRequest, attributes: ['id', 'consecutivo', 'ciudad_destino', 'fecha_ida', 'fecha_regreso'] },
+        { model: db.Expense, as: 'expenses' },
+      ],
+      order: [['created_at', 'DESC']],
+    });
+    res.json(legalizations);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error' });
   }
 });
 
@@ -164,7 +189,7 @@ router.put('/:id/expenses', auth, async (req, res) => {
 router.post('/:id/submit', auth, async (req, res) => {
   try {
     const leg = await db.ExpenseLegalization.findByPk(req.params.id, {
-      include: [{ model: db.Expense, as: 'expenses' }],
+      include: [{ model: db.Expense, as: 'expenses' }, { model: db.User, attributes: ['nombre'] }],
     });
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
@@ -177,8 +202,19 @@ router.post('/:id/submit', auth, async (req, res) => {
       await db.TravelRequest.update({ estado: 'legalizado' }, { where: { id: leg.travel_request_id } });
     }
 
+    // Notify approvers
+    const total = parseFloat(leg.gasto_real_total || 0).toLocaleString('es-CO');
+    notifyRoles(['gerente_ventas', 'administrador'], {
+      tipo: 'enviado',
+      titulo: 'Nueva legalización pendiente de aprobación',
+      mensaje: `${leg.User?.nombre || 'Un usuario'} envió la Legalización #${leg.id} por COP $${total} con ${leg.expenses.length} gasto(s).`,
+      ref_tipo: 'legalizacion',
+      ref_id: leg.id,
+    }).catch(() => {});
+
     res.json(leg);
   } catch (err) {
+    console.error('Submit legalization error:', err);
     res.status(500).json({ error: 'Error al enviar' });
   }
 });
@@ -190,6 +226,10 @@ router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas'
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
 
     const { action, comentarios } = req.body;
+    if (action === 'rechazar' && !comentarios?.trim()) {
+      return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
+    }
+
     const nuevoEstado = action === 'aprobar' ? 'aprobado' : 'rechazado';
 
     await leg.update({
@@ -206,8 +246,22 @@ router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas'
       comentarios,
     });
 
+    // Notify the user who submitted
+    notify({
+      user_id: leg.user_id,
+      tipo: action === 'aprobar' ? 'aprobado' : 'rechazado',
+      titulo: action === 'aprobar' ? 'Legalización aprobada' : 'No se pudo legalizar',
+      mensaje: action === 'aprobar'
+        ? `Tu Legalización #${leg.id} fue aprobada por ${req.user.nombre}.`
+        : `Tu Legalización #${leg.id} no fue autorizada por ${req.user.nombre}.`,
+      ref_tipo: 'legalizacion',
+      ref_id: leg.id,
+      comentarios,
+    }).catch(() => {});
+
     res.json(leg);
   } catch (err) {
+    console.error('Approve legalization error:', err);
     res.status(500).json({ error: 'Error' });
   }
 });

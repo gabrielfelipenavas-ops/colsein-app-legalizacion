@@ -3,6 +3,7 @@ const { body, param, query } = require('express-validator');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { notify, notifyRoles } = require('../services/notifications');
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -174,8 +175,21 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
     }
 
     await report.update({ estado: 'enviado', fecha_envio: new Date() });
+
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const periodo = `${meses[report.periodo_mes - 1]} ${report.periodo_anio}`;
+    const total = parseFloat(report.valor_total || 0).toLocaleString('es-CO');
+    notifyRoles(['lider_regional', 'gerente_ventas', 'administrador'], {
+      tipo: 'enviado',
+      titulo: 'Nuevo reporte de kilometraje pendiente',
+      mensaje: `${req.user.nombre} envió el Reporte de Kilometraje de ${periodo} por COP $${total}.`,
+      ref_tipo: 'kilometraje',
+      ref_id: report.id,
+    }).catch(() => {});
+
     res.json(report);
   } catch (err) {
+    console.error('Submit km error:', err);
     res.status(500).json({ error: 'Error al enviar' });
   }
 });
@@ -187,6 +201,10 @@ router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente
     if (!report) return res.status(404).json({ error: 'No encontrado' });
 
     const { action, comentarios } = req.body; // action: 'aprobar' | 'rechazar'
+    if (action === 'rechazar' && !comentarios?.trim()) {
+      return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
+    }
+
     const nuevoEstado = action === 'aprobar'
       ? (req.user.rol === 'lider_regional' ? 'revisado' : 'aprobado')
       : 'rechazado';
@@ -208,8 +226,36 @@ router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente
       estado: action === 'aprobar' ? 'aprobado' : 'rechazado', comentarios,
     });
 
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const periodo = `${meses[report.periodo_mes - 1]} ${report.periodo_anio}`;
+
+    if (req.user.rol === 'lider_regional' && action === 'aprobar') {
+      // Forward to gerente_ventas / admin for final approval
+      notifyRoles(['gerente_ventas', 'administrador'], {
+        tipo: 'enviado',
+        titulo: 'Kilometraje revisado, pendiente de aprobación final',
+        mensaje: `${req.user.nombre} revisó el Reporte de Kilometraje de ${periodo}. Pendiente de aprobación final.`,
+        ref_tipo: 'kilometraje',
+        ref_id: report.id,
+      }).catch(() => {});
+    } else {
+      // Notify the original user
+      notify({
+        user_id: report.user_id,
+        tipo: action === 'aprobar' ? 'aprobado' : 'rechazado',
+        titulo: action === 'aprobar' ? 'Kilometraje aprobado' : 'No se pudo aprobar el kilometraje',
+        mensaje: action === 'aprobar'
+          ? `Tu Reporte de Kilometraje de ${periodo} fue aprobado por ${req.user.nombre}.`
+          : `Tu Reporte de Kilometraje de ${periodo} no fue autorizado por ${req.user.nombre}.`,
+        ref_tipo: 'kilometraje',
+        ref_id: report.id,
+        comentarios,
+      }).catch(() => {});
+    }
+
     res.json(report);
   } catch (err) {
+    console.error('Approve km error:', err);
     res.status(500).json({ error: 'Error al aprobar' });
   }
 });
@@ -217,10 +263,17 @@ router.post('/reports/:id/approve', auth, requireRole('lider_regional', 'gerente
 // GET /api/kilometraje/pending — for leaders/managers: reports pending approval
 router.get('/pending', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
   try {
-    const estado = req.user.rol === 'lider_regional' ? 'enviado' : 'revisado';
+    let estado;
+    if (req.user.rol === 'lider_regional') estado = 'enviado';
+    else if (req.user.rol === 'administrador') estado = ['enviado', 'revisado', 'aprobado', 'rechazado'];
+    else estado = ['enviado', 'revisado'];
+
     const reports = await db.KilometrageReport.findAll({
       where: { estado },
-      include: [{ model: db.User, attributes: ['id', 'nombre', 'zona'] }],
+      include: [
+        { model: db.User, attributes: ['id', 'nombre', 'zona', 'email', 'cedula', 'vehiculo_tipo', 'placa'] },
+        { model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client }] },
+      ],
       order: [['created_at', 'DESC']],
     });
     res.json(reports);

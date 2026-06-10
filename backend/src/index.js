@@ -33,6 +33,7 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/legalizations', require('./routes/legalizations'));
 app.use('/api/email', require('./routes/email'));
 app.use('/api/config', require('./routes/config'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Health check
 app.get('/api/health', (req, res) => {

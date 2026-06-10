@@ -203,6 +203,18 @@ const Approval = sequelize.define('Approval', {
   comentarios: Sequelize.TEXT,
 }, { tableName: 'approvals', underscored: true, updatedAt: false });
 
+// ── Notification ──
+const Notification = sequelize.define('Notification', {
+  user_id: { type: Sequelize.INTEGER, allowNull: false },
+  tipo: { type: Sequelize.ENUM('enviado', 'aprobado', 'rechazado', 'comentario', 'info'), defaultValue: 'info' },
+  titulo: { type: Sequelize.STRING(200), allowNull: false },
+  mensaje: { type: Sequelize.TEXT, allowNull: false },
+  ref_tipo: { type: Sequelize.ENUM('kilometraje', 'anticipo', 'legalizacion'), allowNull: true },
+  ref_id: { type: Sequelize.INTEGER, allowNull: true },
+  leida: { type: Sequelize.BOOLEAN, defaultValue: false },
+  email_enviado: { type: Sequelize.BOOLEAN, defaultValue: false },
+}, { tableName: 'notifications', underscored: true });
+
 // ── ASSOCIATIONS ──
 User.hasMany(KilometrageReport, { foreignKey: 'user_id' });
 KilometrageReport.belongsTo(User, { foreignKey: 'user_id' });
@@ -229,6 +241,9 @@ EmailMatch.belongsTo(User, { foreignKey: 'user_id' });
 Expense.hasOne(EmailMatch, { foreignKey: 'expense_id', as: 'emailMatch' });
 EmailMatch.belongsTo(Expense, { foreignKey: 'expense_id' });
 
+User.hasMany(Notification, { foreignKey: 'user_id' });
+Notification.belongsTo(User, { foreignKey: 'user_id' });
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 db.User = User;
@@ -241,5 +256,6 @@ db.ExpenseLegalization = ExpenseLegalization;
 db.Expense = Expense;
 db.Approval = Approval;
 db.EmailMatch = EmailMatch;
+db.Notification = Notification;
 
 module.exports = db;

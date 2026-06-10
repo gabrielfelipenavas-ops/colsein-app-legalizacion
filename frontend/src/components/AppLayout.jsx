@@ -1,6 +1,9 @@
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
-import { Home, Route, Camera, FileText, BarChart3, Users, Shield, Bell, LogOut } from 'lucide-react';
+import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import NotificationsPanel from './NotificationsPanel';
+
+const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'control_interno', 'administrador'];
 
 const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },
@@ -11,13 +14,19 @@ const baseTabs = [
   { to: '/reportes', icon: BarChart3, label: 'Reportes' },
 ];
 
-const adminTabs = [
-  { to: '/usuarios', icon: Shield, label: 'Usuarios', adminOnly: true },
-];
+const approverTab = { to: '/aprobaciones', icon: CheckSquare, label: 'Aprobar' };
+const adminTabs = [{ to: '/usuarios', icon: Users, label: 'Usuarios' }];
 
 export default function AppLayout() {
   const { user, logout, isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  const isApprover = APPROVER_ROLES.includes(user?.rol);
+  const tabs = [
+    ...baseTabs,
+    ...(isApprover ? [approverTab] : []),
+    ...(user?.rol === 'administrador' ? adminTabs : []),
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50 max-w-[480px] mx-auto relative">
@@ -28,11 +37,8 @@ export default function AppLayout() {
             <h1 className="text-[17px] font-bold tracking-tight">COLSEIN S.A.S.</h1>
             <p className="text-[11px] opacity-70 mt-0.5 font-medium">{user?.nombre} · {user?.rol?.replace('_', ' ')}</p>
           </div>
-          <div className="flex gap-2">
-            <button className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center relative">
-              <Bell size={16} />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500" />
-            </button>
+          <div className="flex gap-2 items-center">
+            <NotificationsPanel />
             <button onClick={logout} className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
               <LogOut size={16} />
             </button>
@@ -46,9 +52,9 @@ export default function AppLayout() {
       </main>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-slate-200 flex justify-around py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50">
-        {[...baseTabs, ...(user?.rol === 'administrador' ? adminTabs : [])].map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `flex flex-col items-center gap-1 px-2 py-1 text-[10px] font-semibold transition-colors ${isActive ? 'text-colsein-500' : 'text-slate-400'}`}>
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-slate-200 flex justify-around py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50 overflow-x-auto">
+        {tabs.map(({ to, icon: Icon, label }) => (
+          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `flex flex-col items-center gap-1 px-2 py-1 text-[10px] font-semibold transition-colors shrink-0 ${isActive ? 'text-colsein-500' : 'text-slate-400'}`}>
             {({ isActive }) => (
               <>
                 <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />

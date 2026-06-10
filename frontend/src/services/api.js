@@ -52,6 +52,7 @@ export const kmAPI = {
 // ── ANTICIPOS ──
 export const anticipoAPI = {
   list: () => api.get('/anticipos'),
+  pending: () => api.get('/anticipos/pending'),
   create: (data) => api.post('/anticipos', data),
   approve: (id, action, comentarios) => api.post(`/anticipos/${id}/approve`, { action, comentarios }),
 };
@@ -90,12 +91,21 @@ export const clientAPI = {
 // ── LEGALIZATIONS ──
 export const legalizationAPI = {
   list: () => api.get('/legalizations'),
+  pending: () => api.get('/legalizations/pending'),
   get: (id) => api.get(`/legalizations/${id}`),
   create: (data) => api.post('/legalizations', data),
   update: (id, data) => api.put(`/legalizations/${id}`, data),
   updateExpenses: (id, expense_ids) => api.put(`/legalizations/${id}/expenses`, { expense_ids }),
   submit: (id) => api.post(`/legalizations/${id}/submit`),
   approve: (id, action, comentarios) => api.post(`/legalizations/${id}/approve`, { action, comentarios }),
+};
+
+// ── NOTIFICATIONS ──
+export const notificationAPI = {
+  list: (params) => api.get('/notifications', { params }),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
 };
 
 // ── EMAIL ──

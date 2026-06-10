@@ -12,6 +12,7 @@ import LegalizacionPage from './pages/LegalizacionPage';
 import ReportesPage from './pages/ReportesPage';
 import ClientesPage from './pages/ClientesPage';
 import UsuariosPage from './pages/UsuariosPage';
+import AprobacionesPage from './pages/AprobacionesPage';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -42,6 +43,7 @@ function App() {
             <Route path="reportes" element={<ReportesPage />} />
             <Route path="clientes" element={<ClientesPage />} />
             <Route path="usuarios" element={<UsuariosPage />} />
+            <Route path="aprobaciones" element={<AprobacionesPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

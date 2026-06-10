@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { body } = require('express-validator');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
+const { notify, notifyRoles } = require('../services/notifications');
 
 // GET /api/anticipos
 router.get('/', auth, async (req, res) => {
@@ -16,6 +17,24 @@ router.get('/', auth, async (req, res) => {
     res.json(requests);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener anticipos' });
+  }
+});
+
+// GET /api/anticipos/pending — for approvers
+router.get('/pending', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
+  try {
+    const where = {};
+    if (req.user.rol === 'administrador') where.estado = ['enviado', 'aprobado', 'rechazado', 'anticipo_girado', 'legalizado'];
+    else where.estado = 'enviado';
+
+    const requests = await db.TravelRequest.findAll({
+      where,
+      include: [{ model: db.User, attributes: ['id', 'nombre', 'zona', 'email'] }],
+      order: [['created_at', 'DESC']],
+    });
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: 'Error' });
   }
 });
 
@@ -56,6 +75,15 @@ router.post('/', auth, [
       fecha_solicitud: new Date().toISOString().split('T')[0],
     });
 
+    const total = parseFloat(anticipo_total).toLocaleString('es-CO');
+    notifyRoles(['gerente_ventas', 'administrador'], {
+      tipo: 'enviado',
+      titulo: 'Nueva solicitud de anticipo pendiente',
+      mensaje: `${req.user.nombre} solicitó anticipo ${consecutivo} a ${ciudad_destino} por COP $${total}.`,
+      ref_tipo: 'anticipo',
+      ref_id: request.id,
+    }).catch(() => {});
+
     res.status(201).json(request);
   } catch (err) {
     console.error(err);
@@ -70,6 +98,10 @@ router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas'
     if (!request) return res.status(404).json({ error: 'No encontrado' });
 
     const { action, comentarios } = req.body;
+    if (action === 'rechazar' && !comentarios?.trim()) {
+      return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
+    }
+
     const nuevoEstado = action === 'aprobar' ? 'aprobado' : 'rechazado';
 
     await request.update({
@@ -85,8 +117,21 @@ router.post('/:id/approve', auth, requireRole('lider_regional', 'gerente_ventas'
       estado: action === 'aprobar' ? 'aprobado' : 'rechazado', comentarios,
     });
 
+    notify({
+      user_id: request.user_id,
+      tipo: action === 'aprobar' ? 'aprobado' : 'rechazado',
+      titulo: action === 'aprobar' ? 'Anticipo aprobado' : 'No se pudo aprobar el anticipo',
+      mensaje: action === 'aprobar'
+        ? `Tu solicitud de anticipo ${request.consecutivo} a ${request.ciudad_destino} fue aprobada por ${req.user.nombre}.`
+        : `Tu solicitud de anticipo ${request.consecutivo} a ${request.ciudad_destino} no fue autorizada por ${req.user.nombre}.`,
+      ref_tipo: 'anticipo',
+      ref_id: request.id,
+      comentarios,
+    }).catch(() => {});
+
     res.json(request);
   } catch (err) {
+    console.error('Approve anticipo error:', err);
     res.status(500).json({ error: 'Error' });
   }
 });

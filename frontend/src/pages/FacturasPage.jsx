@@ -463,9 +463,9 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
       <div
-        className="fixed inset-0 z-50 bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[90vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden"
+        className="fixed inset-0 z-[70] bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[90vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="shrink-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between">
