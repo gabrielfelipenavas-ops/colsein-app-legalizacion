@@ -25,7 +25,16 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_JWT_SECRET) {
 }
 
 // ── MIDDLEWARE ──
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // Permitir las imágenes de los mapas (OpenStreetMap) sin abrir el resto de la política.
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'img-src': ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org', 'https://*.openstreetmap.org'],
+    },
+  },
+}));
 // CORS: en producción solo se permite el origen configurado (FRONTEND_URL). Si no se
 // configura, no se habilita CORS cruzado (la app se sirve desde el mismo origen).
 app.use(cors({ origin: process.env.FRONTEND_URL || (isProd ? false : 'http://localhost:5173'), credentials: true }));

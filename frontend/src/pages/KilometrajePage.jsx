@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, ArrowLeft, ArrowRight, Receipt, Car, Bike, CheckCircle, AlertTriangle, Send, Navigation } from 'lucide-react';
-import { kmAPI, reportAPI } from '../services/api';
+import { Plus, ArrowLeft, ArrowRight, Receipt, Car, Bike, CheckCircle, AlertTriangle, Send, Navigation, Flag } from 'lucide-react';
+import { kmAPI, reportAPI, tripAPI } from '../services/api';
 import { fmt, fmtNum, dateStr, calcKm, monthName } from '../utils/helpers';
 import AddEntryModal from '../components/AddEntryModal';
 import RecorridoModal from '../components/RecorridoModal';
@@ -10,11 +10,21 @@ export default function KilometrajePage() {
   const [period, setPeriod] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
   const [showAdd, setShowAdd] = useState(false);
   const [showTrip, setShowTrip] = useState(false);
+  const [activeTrip, setActiveTrip] = useState(null);
 
   const load = () => {
     kmAPI.getReports({ mes: period.month, anio: period.year }).then(r => setReports(r.data)).catch(() => {});
   };
   useEffect(load, [period]);
+
+  // Detectar un recorrido en curso o finalizado (sin confirmar) para reanudarlo
+  const loadActiveTrip = () => {
+    tripAPI.list().then(r => {
+      const t = (r.data || []).find(x => x.estado === 'en_curso' || x.estado === 'finalizado');
+      setActiveTrip(t || null);
+    }).catch(() => {});
+  };
+  useEffect(loadActiveTrip, []);
 
   const report = reports[0];
   const entries = report?.entries || [];
@@ -87,9 +97,21 @@ export default function KilometrajePage() {
         )}
       </div>
       <div className="px-4 pt-2">
-        <button onClick={() => setShowTrip(true)} className="btn-outline w-full !border-colsein-500 !text-colsein-600 hover:!bg-colsein-50">
-          <Navigation size={16} /> Recorrido con GPS (estimar km)
-        </button>
+        {activeTrip ? (
+          <button onClick={() => setShowTrip(true)}
+            className="w-full py-3 rounded-xl bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md animate-pulse">
+            <Flag size={16} /> Finalizar recorrido en curso
+          </button>
+        ) : (
+          <button onClick={() => setShowTrip(true)} className="btn-outline w-full !border-colsein-500 !text-colsein-600 hover:!bg-colsein-50">
+            <Navigation size={16} /> Iniciar recorrido con GPS (estimar km)
+          </button>
+        )}
+        {activeTrip && (
+          <p className="text-[11px] text-amber-700 text-center mt-1.5 font-semibold">
+            Tienes un recorrido sin cerrar. Al llegar a tu destino, pulsa "Finalizar recorrido".
+          </p>
+        )}
       </div>
 
       {/* Table */}
@@ -118,7 +140,12 @@ export default function KilometrajePage() {
                       {e.medio === 'CARRO' ? <Car size={10} /> : <Bike size={10} />} {e.medio}
                     </span>
                   </td>
-                  <td className="py-2 px-1 text-right font-mono">{tk}</td>
+                  <td className="py-2 px-1 text-right font-mono">
+                    {tk}
+                    {parseFloat(e.distancia_api || 0) > 0 && parseFloat(e.distancia_api) !== tk && (
+                      <span className="block text-[8px] text-slate-400 font-normal">est. {parseFloat(e.distancia_api)}</span>
+                    )}
+                  </td>
                   <td className="py-2 px-1 text-right font-bold font-mono text-colsein-600">{fmt(val)}</td>
                 </tr>
               );
@@ -162,7 +189,13 @@ export default function KilometrajePage() {
       {showAdd && <AddEntryModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
 
       {/* Recorrido GPS Modal */}
-      {showTrip && <RecorridoModal onClose={() => setShowTrip(false)} onSaved={() => { setShowTrip(false); load(); }} />}
+      {showTrip && (
+        <RecorridoModal
+          initialTrip={activeTrip}
+          onClose={() => { setShowTrip(false); loadActiveTrip(); }}
+          onSaved={() => { setShowTrip(false); setActiveTrip(null); load(); loadActiveTrip(); }}
+        />
+      )}
     </>
   );
 }

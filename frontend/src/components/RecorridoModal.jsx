@@ -39,7 +39,8 @@ function RutaMapa({ puntos }) {
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 200);
+    // Recalcular tamaño varias veces (el modal puede no estar dimensionado al inicio)
+    [100, 350, 700, 1200].forEach((t) => setTimeout(() => { try { map.invalidateSize(); } catch {} }, t));
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
@@ -66,13 +67,15 @@ function RutaMapa({ puntos }) {
   return <div ref={elRef} className="w-full h-56 rounded-xl overflow-hidden border border-slate-200" />;
 }
 
-export default function RecorridoModal({ onClose, onSaved }) {
-  const [medio, setMedio] = useState('CARRO');
-  const [trip, setTrip] = useState(null);
+export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
+  const [medio, setMedio] = useState(initialTrip?.medio || 'CARRO');
+  const [trip, setTrip] = useState(initialTrip || null);
   const [visitName, setVisitName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [totalConfirm, setTotalConfirm] = useState('');
+  const [totalConfirm, setTotalConfirm] = useState(
+    initialTrip?.estado === 'finalizado' ? String(parseFloat(initialTrip.total_km_estimado || 0)) : ''
+  );
 
   const puntos = trip?.puntos || [];
   const estimado = parseFloat(trip?.total_km_estimado || 0);
@@ -226,10 +229,11 @@ export default function RecorridoModal({ onClose, onSaved }) {
               <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                 <p className="text-xs font-bold text-emerald-700 mb-2 flex items-center gap-1"><CheckCircle size={14} /> Confirma los kilómetros del recorrido</p>
                 <p className="text-[11px] text-slate-500 mb-2">Puedes ajustar el total si lo ves necesario. Al confirmar, se agrega a tu reporte de kilometraje del mes.</p>
-                <label className="label-field">Total de kilómetros</label>
-                <input type="number" value={totalConfirm} onChange={e => setTotalConfirm(e.target.value)} className="input-field font-mono mb-2" />
+                <label className="label-field">Kilómetros recorridos</label>
+                <input type="number" value={totalConfirm} onChange={e => setTotalConfirm(e.target.value)} className="input-field font-mono mb-1" />
+                <p className="text-[11px] text-slate-400 mb-2">📍 Estimado por GPS: <strong className="text-colsein-600">{fmtNum(estimado)} km</strong> · puedes ajustarlo arriba</p>
                 <div className="flex justify-between text-xs mb-3 px-1">
-                  <span className="text-slate-500">Valor estimado ({numVisitas} visita{numVisitas !== 1 ? 's' : ''})</span>
+                  <span className="text-slate-500">Valor a pagar ({numVisitas} visita{numVisitas !== 1 ? 's' : ''})</span>
                   <span className="font-bold text-colsein-600">{fmt(totalNum * tarifa)}</span>
                 </div>
                 <button onClick={confirmar} disabled={busy} className="btn-primary w-full !py-3 !bg-emerald-500 hover:!bg-emerald-600">

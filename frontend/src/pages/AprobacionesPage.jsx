@@ -141,6 +141,12 @@ function KilometrajeReview({ report, onClose, onAction, canAct }) {
                   <div>Valor: {fmt(parseFloat(e.valor_km || 0))}</div>
                   <div>Total: {fmt(parseFloat(e.valor_km || 0) + parseFloat(e.peajes || 0) + parseFloat(e.parqueaderos || 0) + parseFloat(e.taxis || 0) + parseFloat(e.otros || 0))}</div>
                 </div>
+                {parseFloat(e.distancia_api || 0) > 0 && (
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    📍 Estimado GPS: <strong className="text-colsein-600">{parseFloat(e.distancia_api)} km</strong>
+                    {' · '}Registrado por el vendedor: <strong className="text-slate-700">{parseFloat(e.total_km)} km</strong>
+                  </p>
+                )}
                 {(parseFloat(e.peajes) > 0 || parseFloat(e.parqueaderos) > 0 || parseFloat(e.taxis) > 0 || parseFloat(e.otros) > 0) && (
                   <div className="flex gap-2 flex-wrap">
                     {parseFloat(e.peajes) > 0 && (

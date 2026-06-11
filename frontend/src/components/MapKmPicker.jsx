@@ -29,7 +29,7 @@ export default function MapKmPicker({ onClose, onPick }) {
       );
     }
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 200);
+    [100, 350, 700, 1200].forEach((t) => setTimeout(() => { try { map.invalidateSize(); } catch {} }, t));
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 

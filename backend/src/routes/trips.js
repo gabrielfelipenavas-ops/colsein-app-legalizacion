@@ -206,6 +206,8 @@ router.post('/:id/confirm', auth, async (req, res) => {
       acumulado += km;
       const valorKm = Math.round(km * tarifa * 100) / 100;
       const nombre = hasta.tipo === 'regreso' ? 'Regreso' : (hasta.label || 'Visita');
+      // Estimado GPS del tramo (lo que el aprobador podrá comparar contra lo confirmado)
+      const estLeg = legs[i - 1] ? Math.round(parseFloat(legs[i - 1].km || 0) * 10) / 10 : km;
 
       const entry = await db.KilometrageEntry.create({
         report_id: report.id,
@@ -215,12 +217,12 @@ router.post('/:id/confirm', auth, async (req, res) => {
         medio: trip.medio,
         km_inicial: 0,
         km_final: 0,
-        total_km: km,
+        total_km: km,          // lo que el usuario confirmó (cuenta para el reembolso)
         valor_km: valorKm,
         peajes: 0, parqueaderos: 0, taxis: 0, otros: 0,
         origen_lat: desde.lat, origen_lng: desde.lng,
         destino_lat: hasta.lat, destino_lng: hasta.lng,
-        distancia_api: km,
+        distancia_api: estLeg, // estimado GPS (para comparar)
       });
       creadas.push(entry.id);
     }
