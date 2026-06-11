@@ -26,6 +26,13 @@ export default function KilometrajePage() {
   };
   useEffect(loadActiveTrip, []);
 
+  const descartarRecorrido = async () => {
+    if (!confirm('¿Descartar el recorrido sin terminar? No se guardará ningún kilometraje de ese recorrido.')) return;
+    try { await tripAPI.discardUnconfirmed(); } catch {}
+    setActiveTrip(null);
+    loadActiveTrip();
+  };
+
   const report = reports[0];
   const entries = report?.entries || [];
   const totalKm = parseFloat(report?.total_km || 0);
@@ -108,9 +115,14 @@ export default function KilometrajePage() {
           </button>
         )}
         {activeTrip && (
-          <p className="text-[11px] text-amber-700 text-center mt-1.5 font-semibold">
-            Tienes un recorrido sin cerrar. Al llegar a tu destino, pulsa "Finalizar recorrido".
-          </p>
+          <div className="text-center mt-1.5">
+            <p className="text-[11px] text-amber-700 font-semibold">
+              Tienes un recorrido sin cerrar. Al llegar a tu destino, pulsa "Finalizar recorrido".
+            </p>
+            <button onClick={descartarRecorrido} className="text-[11px] text-red-500 font-semibold underline mt-1">
+              Descartar recorrido sin terminar
+            </button>
+          </div>
         )}
       </div>
 

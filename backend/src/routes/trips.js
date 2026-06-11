@@ -242,6 +242,18 @@ router.post('/:id/confirm', auth, async (req, res) => {
   }
 });
 
+// DELETE /api/trips/unconfirmed — descartar TODOS los recorridos sin confirmar del usuario
+// (en curso o finalizados que nunca se confirmaron). Debe ir antes de '/:id'.
+router.delete('/unconfirmed', auth, async (req, res) => {
+  try {
+    const n = await db.Trip.destroy({ where: { user_id: req.user.id, estado: ['en_curso', 'finalizado'] } });
+    res.json({ ok: true, eliminados: n });
+  } catch (err) {
+    console.error('Discard unconfirmed trips error:', err);
+    res.status(500).json({ error: 'Error al descartar recorridos sin terminar' });
+  }
+});
+
 // DELETE /api/trips/:id — borrar un recorrido (no borra entradas ya confirmadas)
 router.delete('/:id', auth, async (req, res) => {
   try {

@@ -31,41 +31,71 @@ function estimateInternal(points) {
   return { total_km: Math.round(total * 100) / 100, metodo: 'interno', legs };
 }
 
-// Cálculo por carretera real con OpenRouteService. Una sola petición que pasa
-// por todos los puntos en orden. Devuelve null si no se puede (sin llave/error).
+// Cálculo por carretera real con OSRM (servidor público de OpenStreetMap).
+// GRATIS y SIN LLAVE. Una sola petición que pasa por todos los puntos en orden.
+async function estimateOsrm(points) {
+  if (points.length < 2) return null;
+  // OSRM usa "lng,lat" separados por ";"
+  const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
+  const base = process.env.OSRM_URL || 'https://router.project-osrm.org';
+  const url = `${base}/route/v1/driving/${coords}?overview=false`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  try {
+    const resp = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'colsein-app' } });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.code !== 'Ok' || !data.routes || !data.routes[0]) return null;
+    const route = data.routes[0];
+    const legs = (route.legs || []).map((l) => ({ km: Math.round((l.distance / 1000) * 100) / 100 }));
+    const total_km = Math.round((route.distance / 1000) * 100) / 100;
+    if (!(total_km > 0)) return null;
+    return { total_km, metodo: 'ruta', legs: legs.length ? legs : null };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Cálculo por carretera real con OpenRouteService (alternativa, requiere ORS_API_KEY).
 async function estimateOrs(points) {
   const key = process.env.ORS_API_KEY;
   if (!key || points.length < 2) return null;
 
   const coordinates = points.map((p) => [p.lng, p.lat]); // ORS usa [lng, lat]
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), 9000);
   try {
     const resp = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: key },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, application/geo+json',
+        Authorization: key,
+      },
       body: JSON.stringify({ coordinates }),
       signal: controller.signal,
     });
-    if (!resp.ok) return null; // 401 (llave mala), 429 (límite), etc. → respaldo interno
+    if (!resp.ok) return null; // 401 (llave mala), 429 (límite), etc. → siguiente opción
     const data = await resp.json();
     const route = data?.routes?.[0];
     if (!route?.summary) return null;
 
     const segments = Array.isArray(route.segments) ? route.segments : [];
     const legs = segments.map((s) => ({ km: Math.round((s.distance / 1000) * 100) / 100 }));
-    // Si por alguna razón no vinieron segmentos, igual reportamos el total
     const total_km = Math.round((route.summary.distance / 1000) * 100) / 100;
+    if (!(total_km > 0)) return null;
     return { total_km, metodo: 'ruta', legs: legs.length ? legs : null };
   } catch {
-    return null; // timeout / red / formato inesperado → respaldo interno
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Punto de entrada: intenta ORS y, si no, usa el cálculo interno.
-// points: [{ lat, lng }] en orden de recorrido.
+// Punto de entrada: ruteo REAL por carretera (OSRM, luego ORS) y, si ninguno
+// responde, respaldo interno por línea recta × factor. points: [{lat,lng}] en orden.
 async function estimateRoute(points) {
   const clean = (points || []).filter(
     (p) => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng))
@@ -73,11 +103,11 @@ async function estimateRoute(points) {
 
   if (clean.length < 2) return { total_km: 0, metodo: 'interno', legs: [] };
 
-  const ors = await estimateOrs(clean);
-  if (ors) {
-    // Si ORS no devolvió tramos, completarlos con el interno para conservar el desglose
-    if (!ors.legs) ors.legs = estimateInternal(clean).legs;
-    return ors;
+  // 1) OSRM (gratis, sin llave) → 2) ORS (si hay llave) → 3) interno
+  const real = (await estimateOsrm(clean)) || (await estimateOrs(clean));
+  if (real) {
+    if (!real.legs) real.legs = estimateInternal(clean).legs; // conservar el desglose por tramo
+    return real;
   }
   return estimateInternal(clean);
 }
