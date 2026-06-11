@@ -20,8 +20,10 @@ const ROLES = {
 // Roles que aprueban/revisan solicitudes (el administrador NO aprueba).
 const APROBADORES = [ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
 
-// Roles que pueden VER datos de otros empleados (aprobadores + auditoría).
-const VISORES = [...APROBADORES, ROLES.CONTROL_INTERNO, ROLES.CONTABILIDAD];
+// Roles que pueden VER/descargar datos de TODOS los empleados (aprobadores +
+// auditoría + administrador). El administrador puede ver y descargar todo
+// (legalizaciones, facturas, archivo plano) aunque NO aprueba solicitudes.
+const VISORES = [...APROBADORES, ROLES.CONTROL_INTERNO, ROLES.CONTABILIDAD, ROLES.ADMIN];
 
 // Roles que pueden autorizar taxis por app (Uber/InDriver/DiDi) y gastos especiales.
 const AUTORIZADORES_ESPECIALES = [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];

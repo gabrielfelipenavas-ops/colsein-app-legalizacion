@@ -68,7 +68,7 @@ export const tripAPI = {
 export const accountingAPI = {
   mappings: () => api.get('/accounting/mappings'),
   updateMapping: (id, data) => api.put(`/accounting/mappings/${id}`, data),
-  monthAudit: (year, month) => api.get(`/accounting/legalizations/${year}/${month}`),
+  monthAudit: (year, month, todas) => api.get(`/accounting/legalizations/${year}/${month}`, { params: todas ? { todas: 'true' } : {} }),
   downloadFlat: (year, month) => api.get(`/accounting/netsuite/${year}/${month}`, { responseType: 'blob' }),
 };
 
@@ -160,6 +160,7 @@ export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),
   downloadKmExcel: (reportId) => api.get(`/reports/kilometraje/${reportId}/excel`, { responseType: 'blob' }),
   downloadLegalizacionExcel: (legId) => api.get(`/reports/legalizacion/${legId}/excel`, { responseType: 'blob' }),
+  downloadLegalizacionFacturas: (legId) => api.get(`/reports/legalizacion/${legId}/facturas`, { responseType: 'blob' }),
   downloadAnticipoExcel: (id) => api.get(`/reports/anticipo/${id}/excel`, { responseType: 'blob' }),
   downloadMonthlyPack: (year, month) => api.get(`/reports/monthly-pack/${year}/${month}`, { responseType: 'blob' }),
 };

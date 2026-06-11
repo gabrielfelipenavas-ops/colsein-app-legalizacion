@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Calculator, Download, Settings, ChevronDown, ChevronUp, Save, FileSpreadsheet } from 'lucide-react';
-import { accountingAPI } from '../services/api';
+import { accountingAPI, reportAPI } from '../services/api';
 import { fmt, monthName } from '../utils/helpers';
+
+async function descargarBlob(promise, filename) {
+  try {
+    const { data } = await promise;
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  } catch { alert('Error al descargar'); }
+}
 
 const CAT_LABELS = {
   alimentacion: 'Alimentación', alojamiento: 'Alojamiento', transportes: 'Transportes',
@@ -18,17 +28,18 @@ export default function ContabilidadPage() {
   const [mappings, setMappings] = useState([]);
   const [showMap, setShowMap] = useState(false);
   const [savingId, setSavingId] = useState(null);
+  const [todas, setTodas] = useState(false);
 
   const loadAudit = async () => {
     setLoading(true);
-    try { const { data } = await accountingAPI.monthAudit(year, month); setAudit(data); }
+    try { const { data } = await accountingAPI.monthAudit(year, month, todas); setAudit(data); }
     catch { setAudit(null); }
     setLoading(false);
   };
   const loadMappings = async () => {
     try { const { data } = await accountingAPI.mappings(); setMappings(data); } catch {}
   };
-  useEffect(() => { loadAudit(); }, [year, month]);
+  useEffect(() => { loadAudit(); }, [year, month, todas]);
   useEffect(() => { loadMappings(); }, []);
 
   const setMapField = (id, field, value) =>
@@ -93,7 +104,11 @@ export default function ContabilidadPage() {
           className="btn-primary w-full mt-3 !bg-teal-600 hover:!bg-teal-700 disabled:opacity-50">
           {downloading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Generando...</> : <><Download size={16} /> Generar archivo plano (NetSuite)</>}
         </button>
-        <p className="text-[10px] text-slate-400 mt-2">Solo incluye legalizaciones <strong>aprobadas</strong> con gastos del mes seleccionado.</p>
+        <p className="text-[10px] text-slate-400 mt-2">El archivo plano solo incluye legalizaciones <strong>aprobadas</strong> con gastos del mes seleccionado.</p>
+        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+          <input type="checkbox" checked={todas} onChange={e => setTodas(e.target.checked)} className="w-4 h-4 accent-teal-600" />
+          <span className="text-[11px] font-semibold text-slate-600">Ver también las no aprobadas (auditoría)</span>
+        </label>
       </div>
 
       {/* Editor de mapeo contable */}
@@ -137,6 +152,16 @@ export default function ContabilidadPage() {
             <div className="flex justify-between items-center mb-2">
               <p className="text-sm font-bold flex items-center gap-1"><FileSpreadsheet size={14} className="text-teal-600" /> Legalización #{l.id}</p>
               <span className="text-[10px] text-slate-400">{l.usuario} · {l.zona}</span>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => descargarBlob(reportAPI.downloadLegalizacionExcel(l.id), `Legalizacion_${l.id}.xlsx`)}
+                className="flex-1 py-1.5 rounded-lg border border-colsein-300 text-colsein-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-colsein-50">
+                <Download size={11} /> Excel
+              </button>
+              <button onClick={() => descargarBlob(reportAPI.downloadLegalizacionFacturas(l.id), `Facturas_Legalizacion_${l.id}.zip`)}
+                className="flex-1 py-1.5 rounded-lg border border-emerald-300 text-emerald-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-emerald-50">
+                <Download size={11} /> Facturas
+              </button>
             </div>
             <div className="space-y-1">
               {l.gastos.map(g => (

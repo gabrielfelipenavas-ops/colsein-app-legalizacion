@@ -71,6 +71,46 @@ router.get('/legalizacion/:id/excel', auth, async (req, res) => {
   }
 });
 
+// GET /api/reports/legalizacion/:id/facturas — ZIP con las fotos/soportes de los gastos
+router.get('/legalizacion/:id/facturas', auth, async (req, res) => {
+  try {
+    const leg = await db.ExpenseLegalization.findByPk(req.params.id, {
+      include: [{ model: db.Expense, as: 'expenses' }, { model: db.User, attributes: ['nombre'] }],
+    });
+    if (!leg) return res.status(404).json({ error: 'Legalización no encontrada' });
+    if (leg.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para descargar estas facturas' });
+    }
+
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const filename = `Facturas_Legalizacion_${leg.id}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    let count = 0;
+    for (const e of (leg.expenses || [])) {
+      if (e.imagen_url && e.imagen_url.startsWith('/uploads/')) {
+        const p = path.resolve(uploadDir, e.imagen_url.replace('/uploads/', ''));
+        if (fs.existsSync(p)) {
+          const ext = path.extname(p) || '.jpg';
+          const etq = String(e.establecimiento || e.categoria || 'gasto').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
+          archive.file(p, { name: `${e.fecha}_${etq}_${e.id}${ext}` });
+          count++;
+        }
+      }
+    }
+    if (count === 0) {
+      archive.append('Esta legalización no tiene facturas/soportes con imagen.', { name: 'SIN_FACTURAS.txt' });
+    }
+    await archive.finalize();
+  } catch (err) {
+    console.error('Facturas ZIP error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Error al generar el ZIP de facturas' });
+  }
+});
+
 // GET /api/reports/anticipo/:id/excel — solicitud de anticipo imprimible (firma física)
 router.get('/anticipo/:id/excel', auth, async (req, res) => {
   try {

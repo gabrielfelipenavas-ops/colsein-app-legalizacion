@@ -61,7 +61,8 @@ router.put('/mappings/:id', auth, requireRole(...CONTABLES), async (req, res) =>
 router.get('/legalizations/:year/:month', auth, requireRole(...CONTABLES), async (req, res) => {
   try {
     const year = parseInt(req.params.year), month = parseInt(req.params.month);
-    const data = await legalizacionesDelMes(year, month);
+    const soloAprobadas = req.query.todas !== 'true';
+    const data = await legalizacionesDelMes(year, month, soloAprobadas);
     const resumen = data.map(({ leg, expensesMes }) => ({
       id: leg.id,
       usuario: leg.User?.nombre,

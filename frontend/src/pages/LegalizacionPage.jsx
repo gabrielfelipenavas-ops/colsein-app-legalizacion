@@ -430,6 +430,18 @@ export default function LegalizacionPage() {
     } catch { alert('Error al descargar'); }
   };
 
+  const downloadFacturas = async (legId) => {
+    try {
+      const { data } = await reportAPI.downloadLegalizacionFacturas(legId);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Facturas_Legalizacion_${legId}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al descargar las facturas'); }
+  };
+
   return (
     <>
       <div className="px-4 mb-3">
@@ -454,6 +466,7 @@ export default function LegalizacionPage() {
                         {extra.tipo === 'local' ? 'Local' : 'Viaje'}
                       </span>
                     </div>
+                    {leg.User?.nombre && <p className="text-[11px] text-slate-500 font-semibold">{leg.User.nombre}</p>}
                     {leg.TravelRequest && <p className="text-xs text-slate-400">{leg.TravelRequest.consecutivo} — {leg.TravelRequest.ciudad_destino}</p>}
                     {leg.ciudades_visitadas && <p className="text-xs text-slate-400">{leg.ciudades_visitadas}</p>}
                     <p className="text-xs text-slate-400">{leg.expenses?.length || 0} gasto(s) · {leg.moneda || 'COP'}</p>
@@ -469,6 +482,9 @@ export default function LegalizacionPage() {
                       )}
                       <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">
                         <Download size={11} /> Excel
+                      </button>
+                      <button onClick={() => downloadFacturas(leg.id)} className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                        <Download size={11} /> Facturas
                       </button>
                     </div>
                   </div>
