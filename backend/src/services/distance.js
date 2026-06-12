@@ -28,17 +28,17 @@ function estimateInternal(points) {
     legs.push({ km: Math.round(km * 100) / 100 });
     total += km;
   }
-  return { total_km: Math.round(total * 100) / 100, metodo: 'interno', legs };
+  return { total_km: Math.round(total * 100) / 100, metodo: 'interno', legs, geometry: null };
 }
 
 // Cálculo por carretera real con OSRM (servidor público de OpenStreetMap).
 // GRATIS y SIN LLAVE. Una sola petición que pasa por todos los puntos en orden.
 async function estimateOsrm(points) {
   if (points.length < 2) return null;
-  // OSRM usa "lng,lat" separados por ";"
+  // OSRM usa "lng,lat" separados por ";". Pedimos la geometría (las calles) en GeoJSON.
   const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
   const base = process.env.OSRM_URL || 'https://router.project-osrm.org';
-  const url = `${base}/route/v1/driving/${coords}?overview=false`;
+  const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 9000);
   try {
@@ -50,7 +50,10 @@ async function estimateOsrm(points) {
     const legs = (route.legs || []).map((l) => ({ km: Math.round((l.distance / 1000) * 100) / 100 }));
     const total_km = Math.round((route.distance / 1000) * 100) / 100;
     if (!(total_km > 0)) return null;
-    return { total_km, metodo: 'ruta', legs: legs.length ? legs : null };
+    // Geometría: GeoJSON viene como [lng, lat]; lo pasamos a [lat, lng] para Leaflet
+    const coordsGeo = route.geometry?.coordinates || [];
+    const geometry = coordsGeo.map((c) => [c[1], c[0]]);
+    return { total_km, metodo: 'ruta', legs: legs.length ? legs : null, geometry: geometry.length ? geometry : null };
   } catch {
     return null;
   } finally {

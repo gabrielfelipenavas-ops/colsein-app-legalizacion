@@ -26,7 +26,7 @@ function getPosition() {
 }
 
 // ── Mapa (Leaflet + OpenStreetMap, sin costo ni llave) ──
-function RutaMapa({ puntos }) {
+function RutaMapa({ puntos, ruta }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
@@ -51,8 +51,12 @@ function RutaMapa({ puntos }) {
     const coords = (puntos || []).filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
     if (coords.length === 0) return;
 
-    if (coords.length >= 2) {
-      L.polyline(coords, { color: '#0ea5e9', weight: 4, opacity: 0.8 }).addTo(layer);
+    // Dibujar la ruta por calles si la tenemos; si no, línea recta entre puntos
+    const tieneRuta = Array.isArray(ruta) && ruta.length >= 2;
+    if (tieneRuta) {
+      L.polyline(ruta, { color: '#0ea5e9', weight: 5, opacity: 0.85 }).addTo(layer);
+    } else if (coords.length >= 2) {
+      L.polyline(coords, { color: '#0ea5e9', weight: 4, opacity: 0.6, dashArray: '6' }).addTo(layer);
     }
     puntos.forEach((p, i) => {
       const color = p.tipo === 'salida' ? '#16a34a' : p.tipo === 'regreso' ? '#dc2626' : '#0ea5e9';
@@ -61,8 +65,9 @@ function RutaMapa({ puntos }) {
         .addTo(layer);
     });
     map.invalidateSize();
-    map.fitBounds(L.latLngBounds(coords), { padding: [30, 30], maxZoom: 16 });
-  }, [puntos]);
+    const boundsCoords = (Array.isArray(ruta) && ruta.length >= 2) ? ruta : coords;
+    map.fitBounds(L.latLngBounds(boundsCoords), { padding: [30, 30], maxZoom: 16 });
+  }, [puntos, ruta]);
 
   return <div ref={elRef} className="w-full h-56 rounded-xl overflow-hidden border border-slate-200" />;
 }
@@ -171,7 +176,7 @@ export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
         {/* PASOS 1+ — recorrido en curso o finalizado */}
         {trip && (
           <>
-            <RutaMapa puntos={puntos} />
+            <RutaMapa puntos={puntos} ruta={trip?.ruta} />
 
             {/* Lista de paradas */}
             <div className="mt-3 space-y-1.5">

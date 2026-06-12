@@ -33,6 +33,7 @@ async function recomputeTrip(trip) {
   trip.legs = est.legs || [];
   trip.metodo = est.metodo;
   trip.total_km_estimado = est.total_km;
+  trip.ruta = est.geometry || null; // geometría de las calles para el mapa
   await trip.save();
   return trip;
 }

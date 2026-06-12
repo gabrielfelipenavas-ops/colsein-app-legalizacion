@@ -33,21 +33,29 @@ export default function MapKmPicker({ onClose, onPick }) {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Redibujar marcadores/línea cuando cambian los puntos
+  // Al cambiar los puntos, se invalida la estimación previa
+  useEffect(() => { setEst(null); }, [puntos]);
+
+  // Redibujar marcadores y la ruta (por calles si ya se estimó; si no, recta punteada)
   useEffect(() => {
     const layer = layerRef.current, map = mapRef.current;
     if (!layer || !map) return;
     layer.clearLayers();
     const coords = puntos.map((p) => [p.lat, p.lng]);
-    if (coords.length >= 2) L.polyline(coords, { color: '#0ea5e9', weight: 4, opacity: 0.8 }).addTo(layer);
+    const ruta = est?.geometry;
+    const tieneRuta = Array.isArray(ruta) && ruta.length >= 2;
+    if (tieneRuta) {
+      L.polyline(ruta, { color: '#0ea5e9', weight: 5, opacity: 0.85 }).addTo(layer);
+    } else if (coords.length >= 2) {
+      L.polyline(coords, { color: '#0ea5e9', weight: 4, opacity: 0.6, dashArray: '6' }).addTo(layer);
+    }
     puntos.forEach((p, i) => {
       const color = i === 0 ? '#16a34a' : i === puntos.length - 1 ? '#dc2626' : '#0ea5e9';
       L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 })
         .bindTooltip(i === 0 ? 'Origen' : i === puntos.length - 1 ? 'Destino' : `Parada ${i}`, { permanent: false })
         .addTo(layer);
     });
-    setEst(null);
-  }, [puntos]);
+  }, [puntos, est]);
 
   const estimar = async () => {
     if (puntos.length < 2) return;

@@ -230,6 +230,8 @@ const Trip = sequelize.define('Trip', {
   puntos: { type: Sequelize.JSONB, defaultValue: [] },
   // legs: [{ km }] desglose por tramo (entre puntos consecutivos)
   legs: { type: Sequelize.JSONB, defaultValue: [] },
+  // ruta: geometría de las calles [[lat,lng], ...] para dibujar el recorrido real
+  ruta: { type: Sequelize.JSONB, allowNull: true },
   metodo: { type: Sequelize.ENUM('ruta', 'interno'), allowNull: true },
   total_km_estimado: { type: Sequelize.DECIMAL(10, 2), defaultValue: 0 },
   total_km_confirmado: { type: Sequelize.DECIMAL(10, 2), allowNull: true },
