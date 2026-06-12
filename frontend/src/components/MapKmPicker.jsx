@@ -33,8 +33,21 @@ export default function MapKmPicker({ onClose, onPick }) {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Al cambiar los puntos, se invalida la estimación previa
-  useEffect(() => { setEst(null); }, [puntos]);
+  // Al marcar puntos, calcular AUTOMÁTICAMENTE la ruta por calles (con un pequeño
+  // retraso para no saturar). Así la línea por las vías aparece sola.
+  useEffect(() => {
+    setEst(null);
+    if (puntos.length < 2) { setEstimating(false); return; }
+    setEstimating(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await tripAPI.estimate(puntos);
+        setEst(data);
+      } catch { /* si falla, queda la línea recta punteada de referencia */ }
+      setEstimating(false);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [puntos]);
 
   // Redibujar marcadores y la ruta (por calles si ya se estimó; si no, recta punteada)
   useEffect(() => {
@@ -57,18 +70,6 @@ export default function MapKmPicker({ onClose, onPick }) {
     });
   }, [puntos, est]);
 
-  const estimar = async () => {
-    if (puntos.length < 2) return;
-    setEstimating(true);
-    try {
-      const { data } = await tripAPI.estimate(puntos);
-      setEst(data);
-    } catch {
-      alert('No se pudo estimar la distancia. Intenta de nuevo.');
-    }
-    setEstimating(false);
-  };
-
   return (
     <div className="fixed inset-0 bg-black/60 z-[400] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[94vh] overflow-auto p-4 pb-8">
@@ -76,7 +77,7 @@ export default function MapKmPicker({ onClose, onPick }) {
           <h2 className="text-base font-extrabold flex items-center gap-2"><Navigation size={18} className="text-colsein-500" /> Estimar km en el mapa</h2>
           <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
         </div>
-        <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">Toca en el mapa el <strong>origen</strong>, luego el <strong>destino</strong> (y paradas intermedias si las hubo). Después estima los kilómetros.</p>
+        <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">Toca en el mapa el <strong>origen</strong>, luego el <strong>destino</strong> (y paradas intermedias si las hubo). La <strong>ruta por las calles</strong> y los km se calculan solos.</p>
 
         <div ref={elRef} className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 mb-2" />
 
@@ -103,13 +104,19 @@ export default function MapKmPicker({ onClose, onPick }) {
           </div>
         )}
 
-        {!est ? (
-          <button onClick={estimar} disabled={puntos.length < 2 || estimating} className="btn-primary w-full !py-3 disabled:opacity-50">
-            {estimating ? 'Estimando...' : 'Estimar kilómetros'}
+        {puntos.length < 2 ? (
+          <button disabled className="btn-primary w-full !py-3 opacity-50">Marca origen y destino en el mapa</button>
+        ) : estimating ? (
+          <button disabled className="btn-primary w-full !py-3 opacity-70">
+            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Calculando ruta por las calles…
           </button>
-        ) : (
+        ) : est ? (
           <button onClick={() => { onPick(parseFloat(est.total_km)); onClose(); }} className="btn-primary w-full !py-3 !bg-emerald-500 hover:!bg-emerald-600">
             <Check size={16} /> Usar estos {fmtNum(parseFloat(est.total_km))} km
+          </button>
+        ) : (
+          <button onClick={() => setPuntos(p => [...p])} className="btn-outline w-full !py-3">
+            No se pudo calcular la ruta — toca para reintentar
           </button>
         )}
       </div>
