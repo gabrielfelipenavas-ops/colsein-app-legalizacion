@@ -70,7 +70,8 @@ async function estimateOrs(points) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 9000);
   try {
-    const resp = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
+    // Endpoint /geojson para obtener también la geometría (las calles)
+    const resp = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,14 +83,17 @@ async function estimateOrs(points) {
     });
     if (!resp.ok) return null; // 401 (llave mala), 429 (límite), etc. → siguiente opción
     const data = await resp.json();
-    const route = data?.routes?.[0];
-    if (!route?.summary) return null;
+    const feat = data?.features?.[0];
+    const summary = feat?.properties?.summary;
+    if (!summary) return null;
 
-    const segments = Array.isArray(route.segments) ? route.segments : [];
+    const segments = Array.isArray(feat.properties.segments) ? feat.properties.segments : [];
     const legs = segments.map((s) => ({ km: Math.round((s.distance / 1000) * 100) / 100 }));
-    const total_km = Math.round((route.summary.distance / 1000) * 100) / 100;
+    const total_km = Math.round((summary.distance / 1000) * 100) / 100;
     if (!(total_km > 0)) return null;
-    return { total_km, metodo: 'ruta', legs: legs.length ? legs : null };
+    const coordsGeo = feat.geometry?.coordinates || [];
+    const geometry = coordsGeo.map((c) => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
+    return { total_km, metodo: 'ruta', legs: legs.length ? legs : null, geometry: geometry.length ? geometry : null };
   } catch {
     return null;
   } finally {

@@ -68,6 +68,11 @@ export default function MapKmPicker({ onClose, onPick }) {
         .bindTooltip(i === 0 ? 'Origen' : i === puntos.length - 1 ? 'Destino' : `Parada ${i}`, { permanent: false })
         .addTo(layer);
     });
+    // Centrar el mapa en la ruta (o en los puntos) para que se vea bien
+    const fitCoords = tieneRuta ? ruta : coords;
+    if (fitCoords.length >= 2) {
+      try { map.invalidateSize(); map.fitBounds(L.latLngBounds(fitCoords), { padding: [25, 25], maxZoom: 16 }); } catch {}
+    }
   }, [puntos, est]);
 
   return (
