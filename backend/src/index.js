@@ -100,8 +100,17 @@ app.get('/api/health', (req, res) => {
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../../frontend/dist');
-  app.use(express.static(frontendPath));
-  app.get('*', (req, res) => res.sendFile(path.join(frontendPath, 'index.html')));
+  // Los assets tienen nombre con hash (cache larga); index.html NUNCA se cachea,
+  // así el navegador siempre carga la versión más reciente tras cada despliegue.
+  app.use(express.static(frontendPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    },
+  }));
+  app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
 }
 
 // Error handler

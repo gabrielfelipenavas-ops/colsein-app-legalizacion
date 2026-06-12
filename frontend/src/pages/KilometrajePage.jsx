@@ -107,7 +107,7 @@ export default function KilometrajePage() {
         {activeTrip ? (
           <button onClick={() => setShowTrip(true)}
             className="w-full py-3 rounded-xl bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md animate-pulse">
-            <Flag size={16} /> Finalizar recorrido en curso
+            <Flag size={16} /> {activeTrip.estado === 'finalizado' ? 'Confirmar recorrido' : 'Finalizar recorrido en curso'}
           </button>
         ) : (
           <button onClick={() => setShowTrip(true)} className="btn-outline w-full !border-colsein-500 !text-colsein-600 hover:!bg-colsein-50">
@@ -117,7 +117,9 @@ export default function KilometrajePage() {
         {activeTrip && (
           <div className="text-center mt-1.5">
             <p className="text-[11px] text-amber-700 font-semibold">
-              Tienes un recorrido sin cerrar. Al llegar a tu destino, pulsa "Finalizar recorrido".
+              {activeTrip.estado === 'finalizado'
+                ? 'Tienes un recorrido finalizado sin confirmar. Pulsa "Confirmar recorrido" para guardar los km.'
+                : 'Tienes un recorrido sin cerrar. Al llegar a tu destino, pulsa "Finalizar recorrido".'}
             </p>
             <button onClick={descartarRecorrido} className="text-[11px] text-red-500 font-semibold underline mt-1">
               Descartar recorrido sin terminar
