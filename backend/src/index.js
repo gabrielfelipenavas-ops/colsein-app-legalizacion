@@ -97,9 +97,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV });
 });
 
-// Serve frontend in production
-if (process.env.NODE_ENV === 'production') {
-  const frontendPath = path.join(__dirname, '../../frontend/dist');
+// Serve frontend in production (o siempre que exista el build compilado).
+// No dependemos solo de NODE_ENV: si el frontend está compilado en
+// frontend/dist, lo servimos. Así la app se ve aunque la plataforma de
+// despliegue no haya fijado NODE_ENV=production.
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+const hasFrontendBuild = fs.existsSync(path.join(frontendPath, 'index.html'));
+if (isProd || hasFrontendBuild) {
+  if (!hasFrontendBuild) {
+    console.warn('⚠️  No se encontró frontend/dist/index.html. ¿Se ejecutó el build del frontend?');
+  }
   // Los assets tienen nombre con hash (cache larga); index.html NUNCA se cachea,
   // así el navegador siempre carga la versión más reciente tras cada despliegue.
   app.use(express.static(frontendPath, {
@@ -107,7 +114,9 @@ if (process.env.NODE_ENV === 'production') {
       if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     },
   }));
-  app.get('*', (req, res) => {
+  // SPA fallback: cualquier ruta que no sea /api ni /uploads devuelve index.html.
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(frontendPath, 'index.html'));
   });
