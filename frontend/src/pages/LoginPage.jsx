@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logo from '../brand/logo.jpeg';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -31,8 +32,8 @@ export default function LoginPage() {
       <div className="bg-gradient-to-br from-colsein-500 via-colsein-700 to-colsein-900 px-6 pt-16 pb-10 text-center text-white relative overflow-hidden">
         <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
         <div className="absolute -bottom-5 -left-8 w-28 h-28 rounded-full bg-white/[0.03]" />
-        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <span className="text-3xl font-extrabold text-colsein-500">C</span>
+        <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
+          <img src={logo} alt="COLSEIN Legalizaciones" className="w-full h-full object-contain" />
         </div>
         <h1 className="text-2xl font-extrabold tracking-tight">COLSEIN S.A.S.</h1>
         <p className="text-[11px] opacity-70 mt-1 tracking-[3px] uppercase font-medium">Medición · Control · Automatización</p>

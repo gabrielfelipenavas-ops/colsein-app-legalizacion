@@ -14,7 +14,7 @@ export default defineConfig({
         description: 'Gestión de gastos, kilometraje y viáticos de COLSEIN S.A.S.',
         lang: 'es-CO',
         theme_color: '#0062A3',
-        background_color: '#0062A3',
+        background_color: '#FFFFFF',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
