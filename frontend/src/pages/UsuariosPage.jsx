@@ -33,7 +33,7 @@ export default function UsuariosPage() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
 
-  const isAdmin = currentUser?.rol === 'administrador';
+  const isAdmin = ['administrador', 'gerente_general', 'presidente'].includes(currentUser?.rol);
 
   const load = async () => {
     setLoading(true);
@@ -120,8 +120,8 @@ export default function UsuariosPage() {
     return (
       <div className="px-5 py-20 text-center">
         <Shield size={40} className="mx-auto text-slate-300 mb-3" />
-        <p className="text-sm font-semibold text-slate-500">Solo los administradores pueden gestionar usuarios</p>
-        <p className="text-xs text-slate-400 mt-1">Inicia sesión con una cuenta de administrador</p>
+        <p className="text-sm font-semibold text-slate-500">Solo administración, gerencia general y presidencia pueden gestionar usuarios</p>
+        <p className="text-xs text-slate-400 mt-1">Inicia sesión con una cuenta autorizada</p>
       </div>
     );
   }

@@ -18,6 +18,7 @@ const approverTab = { to: '/aprobaciones', icon: CheckSquare, label: 'Aprobar' }
 const contabilidadTab = { to: '/contabilidad', icon: Calculator, label: 'Contab.' };
 const CONTABLE_ROLES = ['contabilidad', 'administrador', 'gerente_general', 'presidente'];
 const adminTabs = [{ to: '/usuarios', icon: Users, label: 'Usuarios' }];
+const ADMIN_ROLES = ['administrador', 'gerente_general', 'presidente'];
 
 export default function AppLayout() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -28,7 +29,7 @@ export default function AppLayout() {
     ...baseTabs,
     ...(isApprover ? [approverTab] : []),
     ...(CONTABLE_ROLES.includes(user?.rol) ? [contabilidadTab] : []),
-    ...(user?.rol === 'administrador' ? adminTabs : []),
+    ...(ADMIN_ROLES.includes(user?.rol) ? adminTabs : []),
   ];
 
   return (

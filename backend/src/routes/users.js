@@ -2,9 +2,10 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
+const { ADMIN_SISTEMA } = require('../roles');
 
 // GET /api/users
-router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', 'administrador'), async (req, res) => {
+router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', ...ADMIN_SISTEMA), async (req, res) => {
   try {
     const users = await db.User.findAll({ attributes: { exclude: ['password_hash'] }, order: [['nombre', 'ASC']] });
     res.json(users);
@@ -14,7 +15,7 @@ router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_i
 });
 
 // POST /api/users
-router.post('/', auth, requireRole('administrador'), async (req, res) => {
+router.post('/', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
   try {
     const { nombre, cedula, email, password, rol, zona, vehiculo_tipo, placa, telefono, lider_regional_id } = req.body;
     if (!nombre || !cedula || !email) return res.status(400).json({ error: 'Nombre, cédula y correo son obligatorios' });
@@ -33,7 +34,7 @@ router.post('/', auth, requireRole('administrador'), async (req, res) => {
 });
 
 // PUT /api/users/:id
-router.put('/:id', auth, requireRole('administrador'), async (req, res) => {
+router.put('/:id', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
   try {
     const user = await db.User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ error: 'No encontrado' });

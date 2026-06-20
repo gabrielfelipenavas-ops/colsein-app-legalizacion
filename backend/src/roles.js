@@ -28,6 +28,11 @@ const VISORES = [...APROBADORES, ROLES.CONTROL_INTERNO, ROLES.CONTABILIDAD, ROLE
 // Roles que pueden autorizar taxis por app (Uber/InDriver/DiDi) y gastos especiales.
 const AUTORIZADORES_ESPECIALES = [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
 
+// Roles con facultades administrativas del sistema: gestionar usuarios y
+// configuración. Además del administrador, el gerente general y el presidente
+// (cúpula de la jerarquía) tienen estas mismas facultades.
+const ADMIN_SISTEMA = [ROLES.ADMIN, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
+
 // ¿Puede `aprobadorRol` aprobar una solicitud enviada por alguien con `emisorRol`?
 function puedeAprobar(aprobadorRol, emisorRol) {
   if (emisorRol === ROLES.GERENTE_GENERAL) return aprobadorRol === ROLES.PRESIDENTE;
@@ -35,4 +40,4 @@ function puedeAprobar(aprobadorRol, emisorRol) {
   return APROBADORES.includes(aprobadorRol);
 }
 
-module.exports = { ROLES, APROBADORES, VISORES, AUTORIZADORES_ESPECIALES, puedeAprobar };
+module.exports = { ROLES, APROBADORES, VISORES, AUTORIZADORES_ESPECIALES, ADMIN_SISTEMA, puedeAprobar };

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
+const { ADMIN_SISTEMA } = require('../roles');
 
 // GET /api/config
 router.get('/', auth, async (req, res) => {
@@ -15,7 +16,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // PUT /api/config/:clave
-router.put('/:clave', auth, requireRole('administrador'), async (req, res) => {
+router.put('/:clave', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
   try {
     const [config] = await db.SystemConfig.findOrCreate({
       where: { clave: req.params.clave },
