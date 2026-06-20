@@ -19,6 +19,10 @@ const auth = async (req, res, next) => {
 };
 
 const requireRole = (...roles) => (req, res, next) => {
+  // El presidente es superusuario: tiene todas las facultades del sistema y
+  // pasa cualquier control de rol (aprobar, autorizar taxis, gestionar
+  // usuarios/clientes/config, contabilidad, etc.).
+  if (req.user.rol === 'presidente') return next();
   if (!roles.includes(req.user.rol)) {
     return res.status(403).json({ error: 'No tienes permisos para esta acción' });
   }
