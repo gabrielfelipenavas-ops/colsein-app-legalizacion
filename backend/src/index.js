@@ -46,21 +46,36 @@ app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 app.set('trust proxy', 1);
 
 // ── LÍMITE DE PETICIONES (anti fuerza bruta y abuso) ──
-// Límite estricto en el login: 10 intentos cada 15 minutos por IP
+// La clave del límite es POR USUARIO cuando hay sesión (token JWT) y por IP en
+// caso contrario. Así, si 60 personas comparten la misma IP pública de la
+// oficina, cada una tiene su propio cupo y no se bloquean entre sí.
+const userOrIpKey = (req) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) return 'user:' + authHeader.slice(7);
+  return 'ip:' + req.ip;
+};
+
+// Login: seguimos contando por IP (no hay token todavía), pero SOLO los intentos
+// FALLIDOS, para no bloquear a una oficina entera que inicia sesión bien desde la
+// misma IP al empezar el día. Protege contra fuerza bruta sin afectar a usuarios reales.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 30,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { error: 'Demasiados intentos de inicio de sesión. Espera unos minutos e intenta de nuevo.' },
 });
 app.use('/api/auth/login', loginLimiter);
-// Límite general (holgado) para el resto de la API
+// Límite general por usuario (o por IP si no hay sesión): holgado para uso diario.
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
+  keyGenerator: userOrIpKey,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { error: 'Demasiadas peticiones. Espera un momento e intenta de nuevo.' },
 }));
 
@@ -68,6 +83,14 @@ app.use('/api', rateLimit({
 // (ejecute) el archivo. Junto con el filtro de tipos, evita el XSS por archivos subidos.
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+// Aviso: en plataformas como Railway el disco es EFÍMERO. Si UPLOAD_DIR no apunta
+// a un volumen persistente, las facturas/soportes subidos se perderán en cada
+// redespliegue. Configura un volumen y la variable UPLOAD_DIR para conservarlos.
+if (isProd && !process.env.UPLOAD_DIR) {
+  console.warn('⚠️  UPLOAD_DIR no está configurado: los archivos subidos se guardan en almacenamiento EFÍMERO y se perderán al redesplegar. Monta un volumen persistente y define UPLOAD_DIR.');
+} else {
+  console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)}`);
+}
 app.use('/uploads', express.static(path.resolve(uploadDir), {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
