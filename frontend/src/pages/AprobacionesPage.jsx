@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell, CheckSquare } from 'lucide-react';
 import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
@@ -13,7 +13,7 @@ function StatusBadge({ status }) {
 function ImageThumb({ src, alt }) {
   const [open, setOpen] = useState(false);
   if (!src) return null;
-  const url = src.startsWith('http') ? src : src;
+  const url = src.startsWith('http') || src.startsWith('/') ? src : `/${src}`;
   return (
     <>
       <button onClick={() => setOpen(true)} className="block">
@@ -26,6 +26,65 @@ function ImageThumb({ src, alt }) {
         </div>
       )}
     </>
+  );
+}
+
+// Tarjeta de solicitud de autorización (taxi por app / gasto especial) con
+// protección contra doble clic y motivo de rechazo en línea (prompt() no
+// funciona en algunos navegadores móviles).
+function AutorizacionCard({ sol, onDecide }) {
+  const [busy, setBusy] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [motivo, setMotivo] = useState('');
+
+  const decide = async (action, comentarios) => {
+    setBusy(true);
+    try {
+      await onDecide(sol.id, action, comentarios);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card mb-2">
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold flex items-center gap-1"><Bell size={13} className="text-violet-500" /> {sol.concepto}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{sol.User?.nombre} · {sol.User?.zona}</p>
+          {sol.detalle && <p className="text-[10px] text-slate-400 mt-0.5">{sol.detalle}</p>}
+        </div>
+        {parseFloat(sol.monto) > 0 && <p className="text-sm font-extrabold text-colsein-600 shrink-0 ml-2">{fmt(parseFloat(sol.monto))}</p>}
+      </div>
+      {showReject ? (
+        <div className="space-y-2">
+          <textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={2} autoFocus
+            placeholder="Motivo del rechazo (obligatorio)..."
+            className="w-full border border-red-200 rounded-xl px-3 py-2 text-xs resize-none" />
+          <div className="flex gap-2">
+            <button onClick={() => { setShowReject(false); setMotivo(''); }} disabled={busy}
+              className="flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-500 bg-white">
+              Cancelar
+            </button>
+            <button onClick={() => decide('rechazar', motivo.trim())} disabled={busy || !motivo.trim()}
+              className="flex-1 py-2 rounded-xl text-xs font-bold bg-red-500 text-white disabled:opacity-50 flex items-center justify-center gap-1">
+              <XCircle size={14} /> {busy ? 'Enviando...' : 'Confirmar rechazo'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button onClick={() => setShowReject(true)} disabled={busy}
+            className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-1">
+            <XCircle size={14} /> Rechazar
+          </button>
+          <button onClick={() => decide('autorizar', '')} disabled={busy}
+            className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-1">
+            <CheckCircle size={14} /> {busy ? 'Enviando...' : 'Autorizar'}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -462,6 +521,18 @@ export default function AprobacionesPage() {
     ...(esAutorizador ? [{ id: 'autorizaciones', label: 'Autorizaciones', icon: Bell }] : []),
   ];
 
+  // El backend ya exige rol de aprobador/visor; este guard evita una pantalla
+  // vacía a quien navegue aquí manualmente sin permisos.
+  const VISOR_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente', 'control_interno', 'contabilidad', 'administrador'];
+  if (!VISOR_ROLES.includes(user?.rol)) {
+    return (
+      <div className="px-5 py-20 text-center">
+        <CheckSquare size={40} className="mx-auto text-slate-300 mb-3" />
+        <p className="text-sm font-semibold text-slate-500">Tu rol no tiene solicitudes por aprobar</p>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="px-4 mb-3">
@@ -569,26 +640,7 @@ export default function AprobacionesPage() {
           items.autorizaciones.filter(a => a.estado === 'pendiente').length === 0
             ? <p className="text-center text-xs text-slate-400 py-12">No hay solicitudes de autorización pendientes.</p>
             : items.autorizaciones.filter(a => a.estado === 'pendiente').map(sol => (
-                <div key={sol.id} className="card mb-2">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold flex items-center gap-1"><Bell size={13} className="text-violet-500" /> {sol.concepto}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{sol.User?.nombre} · {sol.User?.zona}</p>
-                      {sol.detalle && <p className="text-[10px] text-slate-400 mt-0.5">{sol.detalle}</p>}
-                    </div>
-                    {parseFloat(sol.monto) > 0 && <p className="text-sm font-extrabold text-colsein-600 shrink-0 ml-2">{fmt(parseFloat(sol.monto))}</p>}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => { const c = prompt('Motivo del rechazo (obligatorio):'); if (c && c.trim()) decidirAutorizacion(sol.id, 'rechazar', c.trim()); }}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
-                      <XCircle size={14} /> Rechazar
-                    </button>
-                    <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1">
-                      <CheckCircle size={14} /> Autorizar
-                    </button>
-                  </div>
-                </div>
+                <AutorizacionCard key={sol.id} sol={sol} onDecide={decidirAutorizacion} />
               ))
         )}
       </div>

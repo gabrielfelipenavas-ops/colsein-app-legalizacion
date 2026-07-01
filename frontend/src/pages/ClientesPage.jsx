@@ -41,7 +41,7 @@ export default function ClientesPage() {
       setShowAdd(false);
       await load();
     } catch (err) {
-      alert('Error al crear cliente');
+      alert(err.response?.data?.error || 'Error al crear cliente');
     }
     setSaving(false);
   };

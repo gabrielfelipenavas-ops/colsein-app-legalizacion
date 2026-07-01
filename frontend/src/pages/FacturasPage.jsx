@@ -123,7 +123,9 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
       await emailAPI.deleteMatch(matchId);
       loadSavedMatches();
       onMatchSaved?.();
-    } catch {}
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al desvincular la factura');
+    }
   };
 
   const downloadAttachment = async (uid, filename) => {
@@ -259,7 +261,7 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
                   attachments: [],
                   match_type: 'manual',
                   confidence: m.confidence,
-                }).then(() => { loadSavedMatches(); onMatchSaved?.(); })}
+                }).then(() => { loadSavedMatches(); onMatchSaved?.(); }).catch((err) => alert(err.response?.data?.error || 'No se pudo guardar el cruce'))}
                   className="mt-2 text-[10px] font-bold text-violet-600 underline">
                   Confirmar y guardar este cruce
                 </button>
@@ -860,7 +862,9 @@ export default function FacturasPage() {
     try {
       await expenseAPI.delete(id);
       loadExpenses();
-    } catch {}
+    } catch (err) {
+      alert(err.response?.data?.error || 'No se pudo eliminar el gasto');
+    }
   };
 
   const openManual = () => {
@@ -1093,7 +1097,7 @@ export default function FacturasPage() {
 
             {/* Soporte de factura — OBLIGATORIO */}
             <div className={`rounded-xl p-3 ${file ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
-              <label className="text-xs font-semibold mb-2 block ${file ? 'text-emerald-700' : 'text-red-700'}">
+              <label className={`text-xs font-semibold mb-2 block ${file ? 'text-emerald-700' : 'text-red-700'}`}>
                 {file ? '✓ Soporte adjunto' : 'Foto o PDF de la factura *'}
               </label>
 
@@ -1150,7 +1154,7 @@ export default function FacturasPage() {
               <div key={exp.id} className="p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-2 mb-2">
                   {exp.imagen_url && !exp.imagen_url.toLowerCase().endsWith('.pdf') ? (
-                    <img src={exp.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
+                    <img src={exp.imagen_url.startsWith('http') || exp.imagen_url.startsWith('/') ? exp.imagen_url : `/${exp.imagen_url}`} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
                   ) : exp.imagen_url ? (
                     <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={16} className="text-blue-500" /></div>
                   ) : (

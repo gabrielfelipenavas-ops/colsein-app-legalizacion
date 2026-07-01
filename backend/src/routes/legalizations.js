@@ -124,7 +124,7 @@ router.put('/:id', auth, async (req, res) => {
     const leg = await db.ExpenseLegalization.findByPk(req.params.id);
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
-    if (['aprobado', 'enviado'].includes(leg.estado)) {
+    if (['aprobado', 'enviado', 'revisado'].includes(leg.estado)) {
       return res.status(400).json({ error: 'No se puede editar una legalización ya enviada o aprobada' });
     }
 
@@ -219,6 +219,9 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
+    if (!['borrador', 'rechazado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'Solo se puede enviar una legalización en borrador o devuelta para corrección' });
+    }
     if (leg.expenses.length === 0) return res.status(400).json({ error: 'Agrega al menos un gasto' });
 
     await leg.update({ estado: 'enviado' });
@@ -254,6 +257,10 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (!['enviado', 'revisado'].includes(leg.estado)) {
       return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar legalizaciones enviadas o en revisión' });
+    }
+    // Nadie aprueba su propia legalización.
+    if (leg.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propia legalización' });
     }
     // Jerarquía: las legalizaciones de admin las aprueba el gerente general; las del
     // gerente general, el presidente. Un aprobador de menor nivel no puede autorizarlas.

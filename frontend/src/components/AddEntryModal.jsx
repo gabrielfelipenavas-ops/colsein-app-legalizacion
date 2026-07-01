@@ -88,7 +88,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
       setSearch('');
       setShowClients(false);
     } catch (err) {
-      alert('Error al crear cliente');
+      alert(err.response?.data?.error || 'Error al crear cliente');
     }
     setCreatingClient(false);
   };

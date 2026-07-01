@@ -91,7 +91,27 @@ if (isProd && !process.env.UPLOAD_DIR) {
 } else {
   console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)}`);
 }
-app.use('/uploads', express.static(path.resolve(uploadDir), {
+// Los archivos subidos son documentos financieros (facturas, soportes): exigen
+// sesión válida. El navegador manda la cookie httpOnly emitida en el login para
+// las etiquetas <img>; las llamadas por API pueden usar el header Authorization.
+const jwt = require('jsonwebtoken');
+const uploadsAuth = (req, res, next) => {
+  let token = null;
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) token = header.slice(7);
+  if (!token && req.headers.cookie) {
+    const m = req.headers.cookie.match(/(?:^|;\s*)colsein_auth=([^;]+)/);
+    if (m) token = decodeURIComponent(m[1]);
+  }
+  if (!token) return res.status(401).json({ error: 'Debes iniciar sesión para ver este archivo' });
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Sesión expirada. Inicia sesión de nuevo.' });
+  }
+};
+app.use('/uploads', uploadsAuth, express.static(path.resolve(uploadDir), {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");

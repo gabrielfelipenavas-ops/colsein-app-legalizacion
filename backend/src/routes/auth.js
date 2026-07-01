@@ -23,6 +23,16 @@ router.post('/login', [
 
     const token = jwt.sign({ id: user.id, rol: user.rol }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 
+    // Cookie httpOnly con el mismo token, usada SOLO para autorizar la descarga de
+    // archivos de /uploads (los <img> del navegador no envían el header Authorization).
+    res.cookie('colsein_auth', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/uploads',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     const { password_hash, ...userData } = user.toJSON();
     res.json({ token, user: userData });
   } catch (err) {
@@ -34,6 +44,12 @@ router.post('/login', [
 // GET /api/auth/me
 router.get('/me', auth, (req, res) => {
   res.json({ user: req.user });
+});
+
+// POST /api/auth/logout — limpia la cookie de acceso a archivos
+router.post('/logout', (req, res) => {
+  res.clearCookie('colsein_auth', { path: '/uploads' });
+  res.json({ message: 'Sesión cerrada' });
 });
 
 // PUT /api/auth/password

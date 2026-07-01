@@ -324,11 +324,22 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Un gasto ya incluido en una legalización enviada/revisada/aprobada no se puede
+// tocar: alteraría totales que ya pasaron (o están pasando) por aprobación.
+async function gastoBloqueadoPorLegalizacion(expense) {
+  if (!expense.legalization_id) return false;
+  const leg = await db.ExpenseLegalization.findByPk(expense.legalization_id);
+  return !!leg && ['enviado', 'revisado', 'aprobado'].includes(leg.estado);
+}
+
 // PUT /api/expenses/:id — update expense (optionally replace image)
 router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (await gastoBloqueadoPorLegalizacion(expense)) {
+      return res.status(400).json({ error: 'No se puede modificar un gasto de una legalización ya enviada o aprobada' });
+    }
 
     const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
       'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
@@ -370,6 +381,9 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (await gastoBloqueadoPorLegalizacion(expense)) {
+      return res.status(400).json({ error: 'No se puede eliminar un gasto de una legalización ya enviada o aprobada' });
+    }
     await expense.destroy();
     res.json({ message: 'Eliminado' });
   } catch (err) {

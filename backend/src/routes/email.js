@@ -156,8 +156,12 @@ router.get('/attachment/:uid/:filename', auth, async (req, res) => {
 
     if (!attachment) return res.status(404).json({ error: 'Adjunto no encontrado' });
 
-    res.setHeader('Content-Type', attachment.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // Sanear el nombre para el encabezado (evita inyección de cabeceras HTTP) y
+    // servir sin que el navegador lo interprete (nosniff + descarga forzada).
+    const safeHeaderName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeHeaderName}"`);
     res.send(attachment.content);
   } catch (err) {
     console.error('Attachment error:', err);
@@ -337,6 +341,11 @@ router.post('/save-match', auth, async (req, res) => {
 
     if (!expense_id || !email_uid) {
       return res.status(400).json({ error: 'expense_id y email_uid son requeridos' });
+    }
+    // El UID IMAP es numérico. Validarlo evita que un valor como "../../x" se use
+    // en la ruta del archivo guardado (path traversal) o en la búsqueda IMAP.
+    if (!/^\d+$/.test(String(email_uid))) {
+      return res.status(400).json({ error: 'email_uid no válido' });
     }
 
     // Verify expense belongs to user

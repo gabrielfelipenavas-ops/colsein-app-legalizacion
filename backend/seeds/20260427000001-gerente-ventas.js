@@ -3,6 +3,11 @@ const bcrypt = require('bcryptjs');
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Usuario demo con contraseña conocida (está en el repositorio): nunca en producción.
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('⛔ Seed de demo bloqueado en producción.');
+      return;
+    }
     const hash = (pw) => bcrypt.hashSync(pw, 12);
 
     // Idempotent: skip if user already exists

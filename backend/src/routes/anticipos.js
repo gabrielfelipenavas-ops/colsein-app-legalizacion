@@ -3,7 +3,7 @@ const { body } = require('express-validator');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
-const { VISORES, APROBADORES } = require('../roles');
+const { VISORES, APROBADORES, puedeAprobar } = require('../roles');
 
 // GET /api/anticipos
 router.get('/', auth, async (req, res) => {
@@ -117,10 +117,21 @@ router.post('/', auth, [
 // POST /api/anticipos/:id/approve
 router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
-    const request = await db.TravelRequest.findByPk(req.params.id);
+    const request = await db.TravelRequest.findByPk(req.params.id, {
+      include: [{ model: db.User, attributes: ['id', 'rol'] }],
+    });
     if (!request) return res.status(404).json({ error: 'No encontrado' });
     if (request.estado !== 'enviado') {
       return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar anticipos en estado "enviado"' });
+    }
+    // Nadie aprueba sus propias solicitudes, y se respeta la jerarquía
+    // (p. ej. la solicitud del gerente general solo la aprueba el presidente).
+    if (request.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propia solicitud de anticipo' });
+    }
+    const rolEmisor = request.User?.rol || 'comercial';
+    if (!puedeAprobar(req.user.rol, rolEmisor)) {
+      return res.status(403).json({ error: 'No tienes la jerarquía necesaria para aprobar esta solicitud' });
     }
 
     const { action, comentarios } = req.body;

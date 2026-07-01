@@ -3,10 +3,18 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { ADMIN_SISTEMA } = require('../roles');
 
+// Claves visibles para cualquier usuario autenticado. El resto de la configuración
+// solo la ven los administradores del sistema (si mañana se guarda una clave
+// sensible, no se filtra a todos los empleados).
+const CLAVES_PUBLICAS = ['tarifa_carro', 'tarifa_moto'];
+
 // GET /api/config
 router.get('/', auth, async (req, res) => {
   try {
-    const configs = await db.SystemConfig.findAll();
+    const esAdmin = req.user.rol === 'presidente' || ADMIN_SISTEMA.includes(req.user.rol);
+    const configs = await db.SystemConfig.findAll(
+      esAdmin ? {} : { where: { clave: CLAVES_PUBLICAS } }
+    );
     const map = {};
     configs.forEach(c => { map[c.clave] = c.valor; });
     res.json(map);

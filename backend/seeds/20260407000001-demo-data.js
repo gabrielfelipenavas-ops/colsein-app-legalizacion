@@ -3,6 +3,12 @@ const bcrypt = require('bcryptjs');
 
 module.exports = {
   async up(queryInterface) {
+    // Datos DEMO con contraseñas conocidas públicamente (están en el repositorio).
+    // Jamás deben cargarse en producción: crearían cuentas con credenciales débiles.
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('⛔ Seeds de demo bloqueados en producción. Crea los usuarios reales desde la app.');
+      return;
+    }
     const hash = (pw) => bcrypt.hashSync(pw, 12);
 
     // ── USERS ──

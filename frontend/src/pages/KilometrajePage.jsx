@@ -81,7 +81,8 @@ export default function KilometrajePage() {
       </div>
 
       {/* Summary */}
-      <div className="px-4 pt-3 grid grid-cols-4 gap-1.5">
+      {/* En teléfonos angostos 2 columnas (los montos en COP no caben en 4). */}
+      <div className="px-4 pt-3 grid grid-cols-2 min-[420px]:grid-cols-4 gap-1.5">
         {[
           { l: 'Kilometraje', v: fmt(totalValorKm), s: `${fmtNum(totalKm)} km` },
           { l: 'Peajes', v: fmt(totalPeajes) },
