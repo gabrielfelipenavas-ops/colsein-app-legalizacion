@@ -102,7 +102,7 @@ async function notify({ user_id, tipo = 'info', titulo, mensaje, ref_tipo = null
     await t.sendMail({
       from: FROM,
       to: user.email,
-      subject: `[COLSEIN] ${titulo}`,
+      subject: `[COLSEIN] ${String(titulo || '').replace(/[\r\n]+/g, ' ')}`,
       html: htmlTemplate({ titulo, mensaje, ref_tipo, ref_id, comentarios }),
     });
 

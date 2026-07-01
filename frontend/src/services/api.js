@@ -15,14 +15,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally
+// Handle 401 globally. El 401 del propio /auth/login NO redirige: es un intento
+// de inicio de sesión fallido y la página debe mostrar "Credenciales incorrectas".
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const esLogin = err.config?.url?.includes('/auth/login');
+    if (err.response?.status === 401 && !esLogin) {
       sessionStorage.removeItem('colsein_token');
       sessionStorage.removeItem('colsein_user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') window.location.href = '/login';
     }
     return Promise.reject(err);
   }
@@ -31,6 +33,7 @@ api.interceptors.response.use(
 // ── AUTH ──
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
+  logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   changePassword: (current_password, new_password) => api.put('/auth/password', { current_password, new_password }),
 };

@@ -9,9 +9,11 @@ const sequelize = process.env.DATABASE_URL && env === 'production'
   ? new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
       logging: false,
+      // DB_SSL_VERIFY=true exige verificar el certificado del servidor de BD
+      // (recomendado si el proveedor entrega un CA verificable).
       dialectOptions: process.env.DATABASE_URL.includes('.railway.internal')
         ? {}
-        : { ssl: { require: true, rejectUnauthorized: false } },
+        : { ssl: { require: true, rejectUnauthorized: process.env.DB_SSL_VERIFY === 'true' } },
       pool: dbConfig.pool || { max: 10, min: 2, acquire: 30000, idle: 10000 },
     })
   : new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {

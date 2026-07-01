@@ -10,12 +10,25 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const token = sessionStorage.getItem('colsein_token');
     const stored = sessionStorage.getItem('colsein_user');
-    if (token && stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {}
+    if (!token || !stored) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    // Mostrar la sesión guardada de inmediato, pero validar el token contra el
+    // servidor: si expiró o el usuario fue desactivado, se cierra la sesión.
+    try {
+      setUser(JSON.parse(stored));
+    } catch {}
+    authAPI.me()
+      .then(({ data }) => {
+        setUser(data.user);
+        sessionStorage.setItem('colsein_user', JSON.stringify(data.user));
+      })
+      .catch(() => {
+        // El interceptor 401 de api.js ya limpia la sesión y redirige al login.
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {
@@ -27,6 +40,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    authAPI.logout().catch(() => {}); // limpia la cookie de acceso a archivos
     sessionStorage.removeItem('colsein_token');
     sessionStorage.removeItem('colsein_user');
     setUser(null);

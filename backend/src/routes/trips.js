@@ -180,8 +180,8 @@ router.post('/:id/confirm', auth, async (req, res) => {
       where: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio },
       defaults: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio, estado: 'borrador' },
     });
-    if (report.estado === 'aprobado') {
-      return res.status(400).json({ error: 'El reporte de ese mes ya está aprobado y no se puede modificar' });
+    if (!['borrador', 'rechazado'].includes(report.estado)) {
+      return res.status(400).json({ error: 'El reporte de ese mes ya fue enviado o aprobado y no se puede modificar' });
     }
 
     const { carro, moto } = await getTarifas();

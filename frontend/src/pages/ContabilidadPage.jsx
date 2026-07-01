@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Calculator, Download, Settings, ChevronDown, ChevronUp, Save, FileSpreadsheet } from 'lucide-react';
+import { Calculator, Download, Settings, ChevronDown, ChevronUp, Save, FileSpreadsheet, Shield } from 'lucide-react';
 import { accountingAPI, reportAPI } from '../services/api';
 import { fmt, monthName } from '../utils/helpers';
+import { useAuth } from '../context/AuthContext';
+
+const CONTABLE_ROLES = ['contabilidad', 'administrador', 'gerente_general', 'presidente', 'control_interno'];
 
 async function descargarBlob(promise, filename) {
   try {
@@ -20,6 +23,7 @@ const CAT_LABELS = {
 };
 
 export default function ContabilidadPage() {
+  const { user } = useAuth();
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [audit, setAudit] = useState(null);
@@ -41,6 +45,17 @@ export default function ContabilidadPage() {
   };
   useEffect(() => { loadAudit(); }, [year, month, todas]);
   useEffect(() => { loadMappings(); }, []);
+
+  // El backend ya restringe estos datos por rol; este guard evita mostrar una
+  // pantalla vacía/confusa a quien navegue aquí manualmente sin permisos.
+  if (!CONTABLE_ROLES.includes(user?.rol)) {
+    return (
+      <div className="px-5 py-20 text-center">
+        <Shield size={40} className="mx-auto text-slate-300 mb-3" />
+        <p className="text-sm font-semibold text-slate-500">Solo contabilidad, administración y gerencia pueden ver esta sección</p>
+      </div>
+    );
+  }
 
   const setMapField = (id, field, value) =>
     setMappings(ms => ms.map(m => m.id === id ? { ...m, [field]: value } : m));

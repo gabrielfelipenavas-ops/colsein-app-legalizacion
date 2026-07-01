@@ -20,10 +20,22 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/clients
+// Campos que un usuario puede fijar al crear un cliente (evita asignación masiva).
+const CAMPOS_CLIENTE = ['nombre', 'nit', 'direccion', 'ciudad', 'departamento', 'zona',
+  'latitud', 'longitud', 'contacto_nombre', 'contacto_telefono'];
+
+// POST /api/clients — cualquier usuario autenticado puede crear un cliente al
+// registrar una visita (flujo del modal de kilometraje), pero solo con campos permitidos.
 router.post('/', auth, async (req, res) => {
   try {
-    const client = await db.Client.create(req.body);
+    if (!req.body.nombre || !String(req.body.nombre).trim()) {
+      return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
+    }
+    const data = {};
+    for (const campo of CAMPOS_CLIENTE) {
+      if (req.body[campo] !== undefined) data[campo] = req.body[campo];
+    }
+    const client = await db.Client.create(data);
     res.status(201).json(client);
   } catch (err) {
     res.status(500).json({ error: 'Error al crear cliente' });
@@ -31,7 +43,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // POST /api/clients/import — Bulk import from Excel/CSV (NetSuite format)
-router.post('/import', auth, uploadFile.single('archivo'), async (req, res) => {
+router.post('/import', auth, requireRole('lider_regional', 'gerente_ventas', 'contabilidad', 'control_interno', 'administrador', 'gerente_general'), uploadFile.single('archivo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
 

@@ -33,7 +33,7 @@ export default function AppLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 max-w-[480px] mx-auto relative">
+    <div className="min-h-screen bg-slate-50 max-w-[480px] md:max-w-[640px] mx-auto relative md:shadow-xl">
       {/* Top Bar */}
       <header className="sticky top-0 z-50 bg-gradient-to-r from-colsein-500 to-colsein-700 text-white px-5 pt-4 pb-3.5">
         <div className="flex items-center justify-between">
@@ -56,13 +56,15 @@ export default function AppLayout() {
       </main>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-slate-200 flex justify-around py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50 overflow-x-auto">
+      {/* Todas las pestañas se reparten el ancho disponible (sin scroll horizontal
+          oculto): con roles que ven hasta 9 pestañas, ninguna queda fuera de pantalla. */}
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] md:max-w-[640px] bg-white border-t border-slate-200 flex py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50">
         {tabs.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `flex flex-col items-center gap-1 px-2 py-1 text-[10px] font-semibold transition-colors shrink-0 ${isActive ? 'text-colsein-500' : 'text-slate-400'}`}>
+          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `flex flex-col items-center gap-1 px-0.5 py-1 flex-1 basis-0 min-w-0 text-[9px] font-semibold transition-colors ${isActive ? 'text-colsein-500' : 'text-slate-400'}`}>
             {({ isActive }) => (
               <>
                 <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
-                <span>{label}</span>
+                <span className="truncate max-w-full">{label}</span>
                 {isActive && <span className="w-1 h-1 rounded-full bg-colsein-500 -mt-0.5" />}
               </>
             )}

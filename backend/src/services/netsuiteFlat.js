@@ -21,7 +21,14 @@ const MONEDA = 'COP';
 const TIPO_CAMBIO = '1';
 const DEFAULT_IVA = 'C-IVA-19 BN';
 
-const clean = (s) => String(s == null ? '' : s).replace(/[;\r\n]+/g, ' ').trim();
+// Además de quitar separadores, neutraliza la inyección de fórmulas: si el valor
+// empieza con = + - @ o TAB, Excel lo interpretaría como fórmula al abrir el CSV
+// (riesgo de ejecución de comandos en la máquina del contador). Se antepone ' para
+// que siempre se lea como texto.
+const clean = (s) => {
+  const v = String(s == null ? '' : s).replace(/[;\r\n\t]+/g, ' ').trim();
+  return /^[=+\-@]/.test(v) ? `'${v}` : v;
+};
 
 function fmtFecha(d) {
   const dt = new Date(d);

@@ -4,7 +4,13 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
-const { VISORES, APROBADORES } = require('../roles');
+const { VISORES, APROBADORES, puedeAprobar } = require('../roles');
+
+// Un reporte solo se puede modificar mientras está en manos del empleado:
+// en borrador o devuelto (rechazado). Una vez enviado a revisión ya no se
+// pueden agregar/editar/borrar registros (evita inflar totales tras el envío).
+const ESTADOS_MODIFICABLES = ['borrador', 'rechazado'];
+const ERROR_NO_MODIFICABLE = 'No se puede modificar un reporte que ya fue enviado o aprobado';
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -64,8 +70,8 @@ router.post('/entries', auth, [
       defaults: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio, estado: 'borrador' },
     });
 
-    if (report.estado === 'aprobado') {
-      return res.status(400).json({ error: 'No se puede modificar un reporte aprobado' });
+    if (!ESTADOS_MODIFICABLES.includes(report.estado)) {
+      return res.status(400).json({ error: ERROR_NO_MODIFICABLE });
     }
 
     // Get tariff
@@ -126,7 +132,7 @@ router.put('/entries/:id', auth, async (req, res) => {
     if (!entry) return res.status(404).json({ error: 'Registro no encontrado' });
 
     const report = await db.KilometrageReport.findByPk(entry.report_id);
-    if (report.estado === 'aprobado') return res.status(400).json({ error: 'Reporte ya aprobado' });
+    if (!ESTADOS_MODIFICABLES.includes(report.estado)) return res.status(400).json({ error: ERROR_NO_MODIFICABLE });
 
     const tarifaCarro = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || '600.65');
     const tarifaMoto = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || '507.03');
@@ -175,6 +181,10 @@ router.delete('/entries/:id', auth, async (req, res) => {
   try {
     const entry = await db.KilometrageEntry.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!entry) return res.status(404).json({ error: 'No encontrado' });
+    const reportDel = await db.KilometrageReport.findByPk(entry.report_id);
+    if (reportDel && !ESTADOS_MODIFICABLES.includes(reportDel.estado)) {
+      return res.status(400).json({ error: ERROR_NO_MODIFICABLE });
+    }
     const reportId = entry.report_id;
     await entry.destroy();
     await recalculateReport(reportId);
@@ -193,6 +203,7 @@ router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (re
     const field = req.params.field; // peaje_foto, parqueadero_foto, taxi_foto, otros_foto
     const allowed = ['peaje_foto', 'parqueadero_foto', 'taxi_foto', 'otros_foto'];
     if (!allowed.includes(field)) return res.status(400).json({ error: 'Campo no válido' });
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
 
     const filePath = `/uploads/${req.file.filename}`;
     await entry.update({ [field]: filePath });
@@ -208,7 +219,7 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
   try {
     const report = await db.KilometrageReport.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!report) return res.status(404).json({ error: 'No encontrado' });
-    if (report.estado !== 'borrador') return res.status(400).json({ error: 'Solo se puede enviar un reporte en borrador' });
+    if (!ESTADOS_MODIFICABLES.includes(report.estado)) return res.status(400).json({ error: 'Solo se puede enviar un reporte en borrador o devuelto para corrección' });
 
     // Validate all entries have required photos
     const entries = await db.KilometrageEntry.findAll({ where: { report_id: report.id } });
@@ -241,8 +252,21 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
 // POST /api/kilometraje/reports/:id/approve — approve/reject (leader or manager)
 router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
-    const report = await db.KilometrageReport.findByPk(req.params.id);
+    const report = await db.KilometrageReport.findByPk(req.params.id, {
+      include: [{ model: db.User, attributes: ['id', 'rol'] }],
+    });
     if (!report) return res.status(404).json({ error: 'No encontrado' });
+    if (!['enviado', 'revisado'].includes(report.estado)) {
+      return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar reportes enviados o revisados' });
+    }
+    // Nadie aprueba su propio reporte, y se respeta la jerarquía de aprobación.
+    if (report.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propio reporte de kilometraje' });
+    }
+    const rolEmisorKm = report.User?.rol || 'comercial';
+    if (!puedeAprobar(req.user.rol, rolEmisorKm)) {
+      return res.status(403).json({ error: 'No tienes la jerarquía necesaria para aprobar este reporte' });
+    }
 
     const { action, comentarios } = req.body; // action: 'aprobar' | 'rechazar'
     if (action === 'rechazar' && !comentarios?.trim()) {
