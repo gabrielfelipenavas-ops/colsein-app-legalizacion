@@ -384,26 +384,45 @@ export default function AprobacionesPage() {
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(null);
 
-  const esAutorizador = ['gerente_ventas', 'gerente_general', 'presidente'].includes(user?.rol);
+  const esAutorizador = ['gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente'].includes(user?.rol);
 
-  const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente'];
+  const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente'];
+  const GERENTES = ['gerente_ventas', 'gerente_general', 'gerente_aveva'];
+
+  // Réplica de la regla de jerarquía del backend (roles.js → puedeAprobar)
+  const puedeAprobar = (rol, emisor) => {
+    if (emisor === 'presidente') return false;
+    if (GERENTES.includes(emisor)) return rol === 'presidente';
+    if (emisor === 'administrador') return ['gerente_general', 'presidente'].includes(rol);
+    if (emisor === 'desarrollador_aveva') return ['gerente_aveva', 'presidente'].includes(rol);
+    if (rol === 'gerente_aveva') return false; // el gerente AVEVA solo aprueba a su línea
+    return APROBADORES.includes(rol);
+  };
+
   const canApproveItem = (item) => {
     const rol = user?.rol;
     // Administrador, control interno y contabilidad: solo lectura/auditoría, no aprueban
     if (!APROBADORES.includes(rol)) return false;
 
-    if (tab === 'legalizaciones') {
-      // Jerarquía: legalizaciones de admin → gerente general/presidente; de gerente general → presidente
-      const emisor = item.User?.rol;
-      if (emisor === 'gerente_general' && rol !== 'presidente') return false;
-      if (emisor === 'administrador' && !['gerente_general', 'presidente'].includes(rol)) return false;
-      return ['enviado', 'revisado'].includes(item.estado);
-    }
+    // Nadie aprueba sus propias solicitudes
+    const emisorId = item.user_id ?? item.User?.id;
+    if (emisorId === user?.id) return false;
+
+    if (!puedeAprobar(rol, item.User?.rol)) return false;
+
+    if (tab === 'legalizaciones') return ['enviado', 'revisado'].includes(item.estado);
     if (tab === 'kilometrajes') {
       if (rol === 'lider_regional') return item.estado === 'enviado';
       return ['enviado', 'revisado'].includes(item.estado);
     }
     return item.estado === 'enviado'; // anticipos
+  };
+
+  // ¿Puede el usuario decidir una solicitud de autorización (taxi / gasto especial / modificación)?
+  const canDecideAutorizacion = (sol) => {
+    if (!esAutorizador) return false;
+    if (sol.user_id === user?.id) return false; // nadie se autoriza a sí mismo
+    return puedeAprobar(user?.rol, sol.User?.rol);
   };
 
   const load = async () => {
@@ -572,22 +591,33 @@ export default function AprobacionesPage() {
                 <div key={sol.id} className="card mb-2">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold flex items-center gap-1"><Bell size={13} className="text-violet-500" /> {sol.concepto}</p>
+                      <p className="text-sm font-bold flex items-center gap-1">
+                        <Bell size={13} className="text-violet-500" /> {sol.concepto}
+                        {sol.tipo === 'modificacion' && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">Modificación</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-500 mt-0.5">{sol.User?.nombre} · {sol.User?.zona}</p>
                       {sol.detalle && <p className="text-[10px] text-slate-400 mt-0.5">{sol.detalle}</p>}
                     </div>
                     {parseFloat(sol.monto) > 0 && <p className="text-sm font-extrabold text-colsein-600 shrink-0 ml-2">{fmt(parseFloat(sol.monto))}</p>}
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => { const c = prompt('Motivo del rechazo (obligatorio):'); if (c && c.trim()) decidirAutorizacion(sol.id, 'rechazar', c.trim()); }}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
-                      <XCircle size={14} /> Rechazar
-                    </button>
-                    <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1">
-                      <CheckCircle size={14} /> Autorizar
-                    </button>
-                  </div>
+                  {canDecideAutorizacion(sol) ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => { const c = prompt('Motivo del rechazo (obligatorio):'); if (c && c.trim()) decidirAutorizacion(sol.id, 'rechazar', c.trim()); }}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
+                        <XCircle size={14} /> Rechazar
+                      </button>
+                      <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1">
+                        <CheckCircle size={14} /> Autorizar
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 text-center py-1">
+                      {sol.user_id === user?.id ? 'Tu propia solicitud: la autoriza otro nivel' : 'Esta solicitud la autoriza otro nivel de la jerarquía'}
+                    </p>
+                  )}
                 </div>
               ))
         )}

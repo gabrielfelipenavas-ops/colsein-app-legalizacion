@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save } from 'lucide-react';
-import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI } from '../services/api';
+import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save, Unlock } from 'lucide-react';
+import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI, authorizationAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 
 function StatusBadge({ status }) {
@@ -411,12 +412,45 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
 }
 
 export default function LegalizacionPage() {
+  const { user } = useAuth();
   const [legalizations, setLegalizations] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [editingLeg, setEditingLeg] = useState(null);
 
   const load = () => { legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {}); };
   useEffect(load, []);
+
+  const submitLeg = async (leg) => {
+    if (!confirm(`¿Enviar la Legalización #${leg.id} para aprobación? Después de enviarla no podrás modificarla sin autorización de gerencia/presidencia.`)) return;
+    try {
+      await legalizationAPI.submit(leg.id);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al enviar');
+    }
+  };
+
+  const solicitarModificacion = async (leg) => {
+    const motivo = prompt('¿Por qué necesitas modificar esta legalización? (obligatorio)');
+    if (!motivo || !motivo.trim()) return;
+    try {
+      const { data } = await authorizationAPI.request({
+        tipo: 'modificacion',
+        concepto: `Modificar Legalización #${leg.id}`,
+        detalle: motivo.trim(),
+        ref_tipo: 'legalizacion',
+        ref_id: leg.id,
+      });
+      if (data.estado === 'autorizado') {
+        alert('Legalización desbloqueada: ya puedes modificarla.');
+      } else {
+        alert('Solicitud enviada. Cuando gerencia o presidencia la autorice, la legalización volverá a borrador para que puedas editarla.');
+      }
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'No se pudo crear la solicitud de modificación');
+    }
+  };
 
   const downloadLeg = async (legId) => {
     try {
@@ -474,10 +508,20 @@ export default function LegalizacionPage() {
                   <div className="text-right">
                     <StatusBadge status={leg.estado} />
                     <p className="text-sm font-extrabold text-colsein-600 mt-1">{fmt(parseFloat(leg.gasto_real_total || 0))}</p>
-                    <div className="flex items-center gap-2 justify-end mt-1">
-                      {leg.estado === 'borrador' && (
-                        <button onClick={() => setEditingLeg(leg)} className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
-                          <Edit size={11} /> Editar
+                    <div className="flex items-center gap-2 justify-end mt-1 flex-wrap">
+                      {['borrador', 'rechazado'].includes(leg.estado) && leg.user_id === user?.id && (
+                        <>
+                          <button onClick={() => setEditingLeg(leg)} className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
+                            <Edit size={11} /> Editar
+                          </button>
+                          <button onClick={() => submitLeg(leg)} className="text-[10px] text-white bg-colsein-500 hover:bg-colsein-600 rounded-lg px-2 py-1 font-semibold flex items-center gap-1">
+                            <Send size={11} /> Enviar
+                          </button>
+                        </>
+                      )}
+                      {['enviado', 'revisado', 'aprobado'].includes(leg.estado) && leg.user_id === user?.id && (
+                        <button onClick={() => solicitarModificacion(leg)} className="text-[10px] text-violet-600 font-semibold flex items-center gap-1">
+                          <Unlock size={11} /> Solicitar modificación
                         </button>
                       )}
                       <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">

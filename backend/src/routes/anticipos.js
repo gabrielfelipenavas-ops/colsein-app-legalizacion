@@ -3,13 +3,13 @@ const { body } = require('express-validator');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
-const { VISORES, APROBADORES } = require('../roles');
+const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
 
 // GET /api/anticipos
 router.get('/', auth, async (req, res) => {
   try {
     const where = {};
-    if (req.user.rol === 'comercial') where.user_id = req.user.id;
+    if (!VISORES.includes(req.user.rol)) where.user_id = req.user.id;
     const requests = await db.TravelRequest.findAll({
       where,
       include: [{ model: db.User, attributes: ['id', 'nombre', 'zona'] }],
@@ -32,11 +32,17 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
       where.estado = 'enviado';
     }
 
-    const requests = await db.TravelRequest.findAll({
+    let requests = await db.TravelRequest.findAll({
       where,
-      include: [{ model: db.User, attributes: ['id', 'nombre', 'zona', 'email'] }],
+      include: [{ model: db.User, attributes: ['id', 'nombre', 'zona', 'email', 'rol'] }],
       order: [['created_at', 'DESC']],
     });
+
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven los anticipos que la jerarquía les permite aprobar.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      requests = requests.filter((r) => puedeAprobar(req.user.rol, r.User?.rol));
+    }
     res.json(requests);
   } catch (err) {
     res.status(500).json({ error: 'Error' });
@@ -83,6 +89,9 @@ router.post('/', auth, [
     const presupuesto_total = (valores.alojamiento_dia + valores.alimentacion_dia + valores.transportes_dia + valores.imprevistos_dia + valores.representacion_dia) * duracion;
     const anticipo_total = (valores.alimentacion_dia + valores.transportes_dia) * duracion;
 
+    // El presidente no requiere autorización: su anticipo queda aprobado al crearlo
+    const esPresidente = req.user.rol === ROLES.PRESIDENTE;
+
     const request = await db.TravelRequest.create({
       user_id: req.user.id, consecutivo, destino_tipo: destino_tipo || 'NACIONAL',
       motivo, proceso, ciudad_destino, fecha_ida, fecha_regreso,
@@ -93,13 +102,15 @@ router.post('/', auth, [
       imprevistos_dia: imprevistos_dia || 0,
       representacion_dia: representacion_dia || 0,
       presupuesto_total, anticipo_total,
-      estado: 'enviado',
+      estado: esPresidente ? 'aprobado' : 'enviado',
+      aprobado_por: esPresidente ? req.user.id : null,
+      fecha_aprobacion: esPresidente ? new Date() : null,
       acepta_terminos: acepta_terminos || false,
       fecha_solicitud: new Date().toISOString().split('T')[0],
     });
 
     const total = parseFloat(anticipo_total).toLocaleString('es-CO');
-    notifyRoles(['gerente_ventas', 'gerente_general'], {
+    notifyRoles(aprobadoresDe(req.user.rol), {
       tipo: 'enviado',
       titulo: 'Nueva solicitud de anticipo pendiente',
       mensaje: `${req.user.nombre} solicitó anticipo ${consecutivo} a ${ciudad_destino} por COP $${total}.`,
@@ -117,10 +128,21 @@ router.post('/', auth, [
 // POST /api/anticipos/:id/approve
 router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
-    const request = await db.TravelRequest.findByPk(req.params.id);
+    const request = await db.TravelRequest.findByPk(req.params.id, {
+      include: [{ model: db.User, attributes: ['id', 'rol'] }],
+    });
     if (!request) return res.status(404).json({ error: 'No encontrado' });
     if (request.estado !== 'enviado') {
       return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar anticipos en estado "enviado"' });
+    }
+
+    // Nadie aprueba sus propias solicitudes
+    if (request.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propio anticipo' });
+    }
+    // Jerarquía: lo de los gerentes SOLO lo autoriza el presidente
+    if (!puedeAprobar(req.user.rol, request.User?.rol)) {
+      return res.status(403).json({ error: 'Este anticipo debe ser autorizado por un nivel superior (gerencia / presidencia)' });
     }
 
     const { action, comentarios } = req.body;

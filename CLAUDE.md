@@ -58,6 +58,12 @@ cd frontend && npm run build
 
 ## Flujo de aprobaciones
 Vendedor envía → Líder Regional revisa → Gerente Ventas aprueba → Control Interno audita
+- Nadie aprueba sus propias solicitudes
+- Lo que envía un gerente (ventas, general o AVEVA) SOLO lo autoriza el presidente
+- Línea AVEVA independiente de gerencia general: desarrollador_aveva → gerente_aveva → presidente; el gerente AVEVA solo aprueba a sus desarrolladores de negocio
+- El presidente no requiere autorización: sus envíos quedan aprobados automáticamente
+- Legalizaciones enviadas quedan bloqueadas; para editarlas el usuario solicita autorización de modificación (tipo `modificacion` en authorization_requests) y un gerente/presidente la aprueba → la legalización vuelve a borrador
+- Al crear un usuario (o restablecer su contraseña) se le envían las credenciales por correo (requiere SMTP en .env); cada usuario cambia su contraseña desde el ícono de llave en la app (PUT /api/auth/password)
 
 ## API principal
 - POST /api/auth/login — { email, password } → { token, user }

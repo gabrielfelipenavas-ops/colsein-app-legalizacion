@@ -30,7 +30,7 @@ const User = sequelize.define('User', {
   cedula: { type: Sequelize.STRING(20), allowNull: false, unique: true },
   email: { type: Sequelize.STRING(100), allowNull: false, unique: true },
   password_hash: { type: Sequelize.STRING(255), allowNull: false },
-  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente'), defaultValue: 'comercial' },
+  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente', 'gerente_aveva', 'desarrollador_aveva'), defaultValue: 'comercial' },
   zona: Sequelize.STRING(100),
   lider_regional_id: Sequelize.INTEGER,
   vehiculo_tipo: { type: Sequelize.ENUM('CARRO', 'MOTO'), defaultValue: 'CARRO' },
@@ -257,10 +257,11 @@ const Establishment = sequelize.define('Establishment', {
   veces: { type: Sequelize.INTEGER, defaultValue: 1 },
 }, { tableName: 'establishments', underscored: true });
 
-// ── AuthRequest (Solicitud de autorización: taxis/apps y gastos especiales) ──
+// ── AuthRequest (Solicitud de autorización: taxis/apps, gastos especiales y
+// modificación de legalizaciones ya enviadas) ──
 const AuthRequest = sequelize.define('AuthRequest', {
   user_id: { type: Sequelize.INTEGER, allowNull: false },
-  tipo: { type: Sequelize.ENUM('taxi', 'gasto_especial'), allowNull: false, defaultValue: 'taxi' },
+  tipo: { type: Sequelize.ENUM('taxi', 'gasto_especial', 'modificacion'), allowNull: false, defaultValue: 'taxi' },
   concepto: { type: Sequelize.STRING(300), allowNull: false },
   monto: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   detalle: Sequelize.TEXT,

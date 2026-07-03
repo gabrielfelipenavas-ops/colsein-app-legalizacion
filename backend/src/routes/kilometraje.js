@@ -4,7 +4,7 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
-const { VISORES, APROBADORES } = require('../roles');
+const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -218,12 +218,26 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
       if (parseFloat(e.taxis) > 0 && !e.taxi_foto) return res.status(400).json({ error: `Falta foto de taxi para ${e.cliente_nombre} (${e.fecha})` });
     }
 
+    // El presidente no requiere autorización: su reporte queda aprobado al enviarlo
+    if (req.user.rol === ROLES.PRESIDENTE) {
+      await report.update({ estado: 'aprobado', fecha_envio: new Date(), aprobado_por: req.user.id, fecha_aprobacion: new Date() });
+      return res.json(report);
+    }
+
     await report.update({ estado: 'enviado', fecha_envio: new Date() });
+
+    // Destinatarios según jerarquía: gerentes → presidente; desarrollador AVEVA →
+    // gerente AVEVA; admin → gerencia general/presidencia; el flujo normal pasa
+    // primero por el líder regional además de las gerencias.
+    const sinLider = [ROLES.ADMIN, ROLES.DESARROLLADOR_AVEVA, ...GERENTES].includes(req.user.rol);
+    const destinatarios = sinLider
+      ? aprobadoresDe(req.user.rol)
+      : [ROLES.LIDER, ...aprobadoresDe(req.user.rol)];
 
     const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const periodo = `${meses[report.periodo_mes - 1]} ${report.periodo_anio}`;
     const total = parseFloat(report.valor_total || 0).toLocaleString('es-CO');
-    notifyRoles(['lider_regional', 'gerente_ventas', 'gerente_general'], {
+    notifyRoles(destinatarios, {
       tipo: 'enviado',
       titulo: 'Nuevo reporte de kilometraje pendiente',
       mensaje: `${req.user.nombre} envió el Reporte de Kilometraje de ${periodo} por COP $${total}.`,
@@ -241,8 +255,19 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
 // POST /api/kilometraje/reports/:id/approve — approve/reject (leader or manager)
 router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (req, res) => {
   try {
-    const report = await db.KilometrageReport.findByPk(req.params.id);
+    const report = await db.KilometrageReport.findByPk(req.params.id, {
+      include: [{ model: db.User, attributes: ['id', 'rol'] }],
+    });
     if (!report) return res.status(404).json({ error: 'No encontrado' });
+
+    // Nadie aprueba sus propias solicitudes
+    if (report.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propio reporte de kilometraje' });
+    }
+    // Jerarquía: lo de los gerentes SOLO lo autoriza el presidente
+    if (!puedeAprobar(req.user.rol, report.User?.rol)) {
+      return res.status(403).json({ error: 'Este reporte debe ser autorizado por un nivel superior (gerencia / presidencia)' });
+    }
 
     const { action, comentarios } = req.body; // action: 'aprobar' | 'rechazar'
     if (action === 'rechazar' && !comentarios?.trim()) {
@@ -309,17 +334,23 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     let estado;
     if (req.user.rol === 'lider_regional') estado = 'enviado';
-    else if (req.user.rol === 'gerente_ventas') estado = ['enviado', 'revisado'];
+    else if (['gerente_ventas', 'gerente_aveva'].includes(req.user.rol)) estado = ['enviado', 'revisado'];
     else estado = ['enviado', 'revisado', 'aprobado', 'rechazado']; // gerente_general, presidente, control_interno, contabilidad: ven todo
 
-    const reports = await db.KilometrageReport.findAll({
+    let reports = await db.KilometrageReport.findAll({
       where: { estado },
       include: [
-        { model: db.User, attributes: ['id', 'nombre', 'zona', 'email', 'cedula', 'vehiculo_tipo', 'placa'] },
+        { model: db.User, attributes: ['id', 'nombre', 'zona', 'email', 'cedula', 'vehiculo_tipo', 'placa', 'rol'] },
         { model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client }] },
       ],
       order: [['created_at', 'DESC']],
     });
+
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven los reportes que la jerarquía les permite aprobar.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      reports = reports.filter((r) => puedeAprobar(req.user.rol, r.User?.rol));
+    }
     res.json(reports);
   } catch (err) {
     res.status(500).json({ error: 'Error' });

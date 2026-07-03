@@ -2,20 +2,13 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
-const { ROLES, VISORES, APROBADORES, puedeAprobar } = require('../roles');
-
-// ¿A qué roles se les notifica una legalización según quién la envió? (item: jerarquía)
-function aprobadoresDe(emisorRol) {
-  if (emisorRol === ROLES.GERENTE_GENERAL) return [ROLES.PRESIDENTE];
-  if (emisorRol === ROLES.ADMIN) return [ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
-  return [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL];
-}
+const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
 
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
   try {
     const where = {};
-    if (req.user.rol === 'comercial') where.user_id = req.user.id;
+    if (!VISORES.includes(req.user.rol)) where.user_id = req.user.id;
     const legalizations = await db.ExpenseLegalization.findAll({
       where,
       include: [
@@ -37,7 +30,7 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     const where = {};
     if (req.user.rol === 'lider_regional') where.estado = 'enviado';
-    else if (req.user.rol === 'gerente_ventas') where.estado = ['enviado', 'revisado'];
+    else if (['gerente_ventas', 'gerente_aveva'].includes(req.user.rol)) where.estado = ['enviado', 'revisado'];
     else where.estado = ['enviado', 'revisado', 'aprobado', 'rechazado']; // dirección/auditoría ven todo
 
     let legalizations = await db.ExpenseLegalization.findAll({
@@ -50,12 +43,11 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    // Los aprobadores de primer nivel (líder / gerente de ventas) NO ven las
-    // legalizaciones de administrador / gerente general / presidente: esas las
-    // autoriza un nivel superior.
-    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS].includes(req.user.rol)) {
-      const superiores = [ROLES.ADMIN, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
-      legalizations = legalizations.filter((l) => !superiores.includes(l.User?.rol));
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven lo que la jerarquía les permite aprobar: no lo de admin, gerentes
+    // ni presidente; la línea AVEVA solo la ve/aprueba su gerente AVEVA.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      legalizations = legalizations.filter((l) => puedeAprobar(req.user.rol, l.User?.rol));
     }
     res.json(legalizations);
   } catch (err) {
@@ -124,8 +116,8 @@ router.put('/:id', auth, async (req, res) => {
     const leg = await db.ExpenseLegalization.findByPk(req.params.id);
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
-    if (['aprobado', 'enviado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'No se puede editar una legalización ya enviada o aprobada' });
+    if (['enviado', 'revisado', 'aprobado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'No se puede editar una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
     }
 
     const { ciudades_visitadas, moneda, tipo, motivo, valor_anticipo } = req.body;
@@ -170,7 +162,7 @@ router.put('/:id/expenses', auth, async (req, res) => {
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
     if (['enviado', 'revisado', 'aprobado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'No se pueden modificar los gastos de una legalización ya enviada o aprobada' });
+      return res.status(400).json({ error: 'No se pueden modificar los gastos de una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
     }
 
     const { expense_ids } = req.body;
@@ -219,7 +211,19 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
+    if (!['borrador', 'rechazado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'Esta legalización ya fue enviada. Solicita autorización de modificación para editarla.' });
+    }
     if (leg.expenses.length === 0) return res.status(400).json({ error: 'Agrega al menos un gasto' });
+
+    // El presidente no requiere autorización: sus legalizaciones quedan aprobadas al enviarlas
+    if (req.user.rol === ROLES.PRESIDENTE) {
+      await leg.update({ estado: 'aprobado', aprobado_por: req.user.id });
+      if (leg.travel_request_id) {
+        await db.TravelRequest.update({ estado: 'legalizado' }, { where: { id: leg.travel_request_id } });
+      }
+      return res.json(leg);
+    }
 
     await leg.update({ estado: 'enviado' });
 
@@ -228,7 +232,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       await db.TravelRequest.update({ estado: 'legalizado' }, { where: { id: leg.travel_request_id } });
     }
 
-    // Notificar a quien corresponde según la jerarquía (admin → gerente general, etc.)
+    // Notificar a quien corresponde según la jerarquía (gerentes → presidente, etc.)
     const total = parseFloat(leg.gasto_real_total || 0).toLocaleString('es-CO');
     notifyRoles(aprobadoresDe(leg.User?.rol), {
       tipo: 'enviado',
@@ -255,10 +259,14 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     if (!['enviado', 'revisado'].includes(leg.estado)) {
       return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar legalizaciones enviadas o en revisión' });
     }
-    // Jerarquía: las legalizaciones de admin las aprueba el gerente general; las del
-    // gerente general, el presidente. Un aprobador de menor nivel no puede autorizarlas.
+    // Nadie aprueba sus propias solicitudes
+    if (leg.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes aprobar tu propia legalización' });
+    }
+    // Jerarquía: las legalizaciones de admin las aprueba el gerente general o el
+    // presidente; las de los gerentes, SOLO el presidente.
     if (!puedeAprobar(req.user.rol, leg.User?.rol)) {
-      return res.status(403).json({ error: 'Esta legalización debe ser autorizada por un nivel superior (gerente general / presidencia)' });
+      return res.status(403).json({ error: 'Esta legalización debe ser autorizada por un nivel superior (gerencia / presidencia)' });
     }
 
     const { action, comentarios } = req.body;
