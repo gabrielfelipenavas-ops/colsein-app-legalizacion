@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
-import { fmt } from '../utils/helpers';
+import { fmt, validarFechaGasto } from '../utils/helpers';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -426,7 +426,8 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
       setForm(prev => ({
         ...prev,
         categoria: catMap[d.tipo_gasto] || prev.categoria,
-        fecha: d.fecha || prev.fecha,
+        // Solo autollenar la fecha del OCR si está en el rango razonable
+        fecha: d.fecha && !validarFechaGasto(d.fecha) ? d.fecha : prev.fecha,
         establecimiento: d.establecimiento || prev.establecimiento,
         nit_establecimiento: d.nit || prev.nit_establecimiento,
         direccion: d.direccion || prev.direccion,
@@ -448,7 +449,13 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
   const isPdf = expense.imagen_url?.toLowerCase().endsWith('.pdf');
   const imageSrc = expense.imagen_url ? (expense.imagen_url.startsWith('/') ? expense.imagen_url : `/${expense.imagen_url}`) : null;
 
+  const fechaWarning = validarFechaGasto(form.fecha);
+
   const handleSave = async () => {
+    if (fechaWarning) {
+      alert(fechaWarning);
+      return;
+    }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -589,7 +596,8 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha</label>
-                <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+                <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 text-sm ${fechaWarning ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
+                {fechaWarning && <p className="text-[10px] text-red-600 font-semibold mt-1 flex items-center gap-1"><AlertTriangle size={10} className="shrink-0" /> {fechaWarning}</p>}
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Establecimiento</label>
@@ -780,7 +788,8 @@ export default function FacturasPage() {
     setForm({
       ...emptyForm,
       categoria: catMap[ocrData.tipo_gasto] || 'otro',
-      fecha: ocrData.fecha || emptyForm.fecha,
+      // Solo autollenar la fecha del OCR si está en el rango razonable
+      fecha: ocrData.fecha && !validarFechaGasto(ocrData.fecha) ? ocrData.fecha : emptyForm.fecha,
       establecimiento: ocrData.establecimiento || '',
       nit_establecimiento: ocrData.nit || '',
       direccion: ocrData.direccion || '',
@@ -811,6 +820,8 @@ export default function FacturasPage() {
 
   const validate = () => {
     if (!form.valor || parseFloat(form.valor) <= 0) return 'Ingresa el valor del gasto';
+    const fechaError = validarFechaGasto(form.fecha);
+    if (fechaError) return fechaError;
     if (!file && !form.sin_soporte) return 'Debes adjuntar foto/PDF de la factura o marcar "Sin soporte" y justificar';
     if (form.sin_soporte && !form.justificacion_sin_soporte.trim()) return 'Debes justificar por qué no tienes el soporte';
     return '';
@@ -991,7 +1002,10 @@ export default function FacturasPage() {
 
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha *</label>
-              <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold" />
+              <input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 text-sm font-semibold ${validarFechaGasto(form.fecha) ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
+              {validarFechaGasto(form.fecha) && (
+                <p className="text-[10px] text-red-600 font-semibold mt-1 flex items-center gap-1"><AlertTriangle size={10} className="shrink-0" /> {validarFechaGasto(form.fecha)}</p>
+              )}
             </div>
 
             <div className="relative">
@@ -1160,6 +1174,9 @@ export default function FacturasPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
                       <span className="text-[10px] text-slate-400">{exp.fecha}</span>
+                      {validarFechaGasto(exp.fecha) && (
+                        <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded" title={validarFechaGasto(exp.fecha)}>⚠ Fecha sospechosa</span>
+                      )}
                       {exp.observaciones?.includes('[SIN SOPORTE') && (
                         <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Sin soporte</span>
                       )}

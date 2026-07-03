@@ -138,13 +138,19 @@ export default function KilometrajePage() {
               <th className="text-left py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Cliente</th>
               <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Medio</th>
               <th className="text-right py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Km</th>
-              <th className="text-right py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Valor</th>
+              <th className="text-right py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Valor Km</th>
+              <th className="text-right py-2 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Apoyos</th>
             </tr>
           </thead>
           <tbody>
             {entries.map(e => {
               const tk = parseFloat(e.total_km);
-              const val = parseFloat(e.valor_km) + parseFloat(e.peajes||0) + parseFloat(e.parqueaderos||0) + parseFloat(e.taxis||0) + parseFloat(e.otros||0);
+              // La columna "Valor Km" muestra SOLO el kilometraje (km × tarifa),
+              // como en el Desglose de Costos de Reportes. Peajes, parqueaderos,
+              // taxis y otros van aparte en "Apoyos" (antes se sumaban todos en
+              // una sola columna "Valor" y la fila parecía tener el km inflado).
+              const valorKm = parseFloat(e.valor_km || 0);
+              const apoyos = parseFloat(e.peajes || 0) + parseFloat(e.parqueaderos || 0) + parseFloat(e.taxis || 0) + parseFloat(e.otros || 0);
               return (
                 <tr key={e.id} className="border-b border-slate-100">
                   <td className="py-2 px-1 font-mono text-[11px] whitespace-nowrap">{dateStr(e.fecha)}</td>
@@ -160,12 +166,13 @@ export default function KilometrajePage() {
                       <span className="block text-[8px] text-slate-400 font-normal">est. {parseFloat(e.distancia_api)}</span>
                     )}
                   </td>
-                  <td className="py-2 px-1 text-right font-bold font-mono text-colsein-600">{fmt(val)}</td>
+                  <td className="py-2 px-1 text-right font-bold font-mono text-colsein-600">{fmt(valorKm)}</td>
+                  <td className="py-2 px-1 text-right font-mono text-slate-500">{apoyos > 0 ? fmt(apoyos) : '—'}</td>
                 </tr>
               );
             })}
             {entries.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-slate-400 py-8">No hay registros para este periodo</td></tr>
+              <tr><td colSpan={6} className="text-center text-slate-400 py-8">No hay registros para este periodo</td></tr>
             )}
           </tbody>
           {entries.length > 0 && (
@@ -173,7 +180,12 @@ export default function KilometrajePage() {
               <tr className="bg-slate-50 font-bold">
                 <td colSpan={3} className="py-2 px-1">TOTAL</td>
                 <td className="py-2 px-1 text-right font-mono">{fmtNum(totalKm)}</td>
-                <td className="py-2 px-1 text-right font-mono text-colsein-600">{fmt(valorTotal)}</td>
+                <td className="py-2 px-1 text-right font-mono text-colsein-600">{fmt(totalValorKm)}</td>
+                <td className="py-2 px-1 text-right font-mono text-slate-500">{fmt(Math.max(0, valorTotal - totalValorKm))}</td>
+              </tr>
+              <tr className="bg-colsein-50 font-extrabold">
+                <td colSpan={4} className="py-2 px-1 text-colsein-700">TOTAL A PAGAR (km + apoyos)</td>
+                <td colSpan={2} className="py-2 px-1 text-right font-mono text-colsein-700">{fmt(valorTotal)}</td>
               </tr>
             </tfoot>
           )}

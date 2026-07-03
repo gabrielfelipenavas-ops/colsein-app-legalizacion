@@ -93,6 +93,8 @@ export default function AddEntryModal({ onClose, onSaved }) {
     setCreatingClient(false);
   };
 
+  // Km final menor que el inicial = lectura del odómetro imposible → se avisa y no se puede guardar
+  const kmInvertidos = form.km_inicial !== '' && form.km_final !== '' && (parseInt(form.km_final) || 0) < (parseInt(form.km_inicial) || 0);
   const totalKm = Math.max(0, (parseInt(form.km_final) || 0) - (parseInt(form.km_inicial) || 0));
   const tarifa = form.medio === 'CARRO' ? TARIFAS.CARRO : TARIFAS.MOTO;
   const valorKm = Math.round(totalKm * tarifa);
@@ -193,8 +195,13 @@ export default function AddEntryModal({ onClose, onSaved }) {
         {/* KM */}
         <div className="grid grid-cols-2 gap-2.5 mb-2">
           <div><label className="label-field">Km Inicial</label><input type="number" placeholder="0" value={form.km_inicial} onChange={e => u('km_inicial', e.target.value)} className="input-field font-mono" /></div>
-          <div><label className="label-field">Km Final</label><input type="number" placeholder="0" value={form.km_final} onChange={e => u('km_final', e.target.value)} className="input-field font-mono" /></div>
+          <div><label className="label-field">Km Final</label><input type="number" placeholder="0" value={form.km_final} onChange={e => u('km_final', e.target.value)} className={`input-field font-mono ${kmInvertidos ? '!border-red-400 !bg-red-50' : ''}`} /></div>
         </div>
+        {kmInvertidos && (
+          <p className="mb-2 p-2 bg-red-50 border border-red-200 rounded-lg text-[11px] text-red-600 font-semibold flex items-center gap-1.5">
+            <AlertTriangle size={12} className="shrink-0" /> El km final no puede ser menor que el km inicial.
+          </p>
+        )}
         {/* Estimar en el mapa cuando no se tuvo odómetro */}
         <button type="button" onClick={() => setShowMap(true)}
           className="w-full mb-3.5 py-2 rounded-xl border border-colsein-300 text-colsein-600 bg-white text-[11px] font-bold hover:bg-colsein-50 flex items-center justify-center gap-1.5">

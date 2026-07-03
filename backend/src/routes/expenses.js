@@ -3,6 +3,7 @@ const db = require('../models');
 const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const path = require('path');
+const { validarFechaGasto } = require('../utils/dates');
 
 const CATEGORIAS_VALIDAS = ['alojamiento', 'alimentacion', 'transportes', 'imprevistos', 'representacion', 'peaje', 'parqueadero', 'taxi', 'otro'];
 const MEDIOS_PAGO_VALIDOS = ['efectivo', 'tarjeta_debito', 'tarjeta_credito'];
@@ -136,6 +137,11 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
     if (!data.fecha) {
       return res.status(400).json({ error: 'La fecha del gasto es obligatoria' });
     }
+    // Rechaza fechas imposibles (típicamente mal leídas por el OCR): futuras o muy antiguas
+    const fechaError = validarFechaGasto(data.fecha);
+    if (fechaError) {
+      return res.status(400).json({ error: fechaError });
+    }
     if (data.valor === null || data.valor === undefined) {
       return res.status(400).json({ error: 'El valor del gasto es obligatorio' });
     }
@@ -239,6 +245,10 @@ function parseColombianReceipt(text) {
       const year = c.length === 2 ? `20${c}` : c;
       fecha = `${year}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
     }
+    // El OCR a veces "lee" como fecha un número de resolución, un vencimiento u
+    // otra cifra del recibo (ej. 2005-12-24). Si la fecha extraída está fuera
+    // del rango razonable, se descarta para que el usuario la digite manualmente.
+    if (validarFechaGasto(fecha)) fecha = null;
   }
 
   // Valor total
@@ -339,6 +349,12 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
           ? (toMoney(req.body[k]) || 0)
           : req.body[k];
       }
+    }
+
+    // Si se está cambiando la fecha, validar que sea razonable (ni futura ni muy antigua)
+    if (updates.fecha !== undefined) {
+      const fechaError = validarFechaGasto(updates.fecha);
+      if (fechaError) return res.status(400).json({ error: fechaError });
     }
 
     if (req.file) {

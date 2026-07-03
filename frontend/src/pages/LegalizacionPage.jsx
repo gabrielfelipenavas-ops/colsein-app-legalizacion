@@ -35,9 +35,18 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
     expenseAPI.list().then(r => setAllExpenses(r.data)).catch(() => {});
   }, []);
 
+  // Solo se ofrecen gastos SIN legalizar (los que ya pertenecen a otra
+  // legalización no se pueden volver a incluir) — el mensaje de vacío lo explica.
   const unlinkedExpenses = allExpenses.filter(e => !e.legalization_id);
+  const yaLegalizados = allExpenses.length - unlinkedExpenses.length;
   const toggleExpense = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const totalSelected = unlinkedExpenses.filter(e => selectedIds.includes(e.id)).reduce((s, e) => s + parseFloat(e.valor || 0), 0);
+
+  // Validación del paso "Información": no se puede avanzar sin ciudad(es) ni,
+  // para gastos locales, sin el motivo.
+  const faltaMotivo = tipo === 'local' && !motivo.trim();
+  const faltaCiudad = !ciudades.trim();
+  const infoValida = !faltaMotivo && !faltaCiudad;
 
   const handleCreate = async () => {
     setSaving(true);
@@ -168,9 +177,16 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
               </div>
             </div>
 
+            {!infoValida && (
+              <p className="mt-4 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
+                {faltaCiudad && faltaMotivo ? 'Completa el motivo y la(s) ciudad(es) para continuar.'
+                  : faltaCiudad ? 'Indica la(s) ciudad(es) para continuar.'
+                  : 'Indica el motivo del gasto para continuar.'}
+              </p>
+            )}
             <div className="flex gap-2 mt-5">
               <button onClick={() => setStep(1)} className="btn-outline flex-1">Atrás</button>
-              <button onClick={() => setStep(3)} className="btn-primary flex-1">Siguiente</button>
+              <button onClick={() => setStep(3)} disabled={!infoValida} className="btn-primary flex-1 disabled:opacity-50">Siguiente</button>
             </div>
           </>
         )}
@@ -180,8 +196,20 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
           <>
             {unlinkedExpenses.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-sm text-slate-400">No hay gastos disponibles.</p>
-                <p className="text-xs text-slate-400 mt-1">Registra gastos en la pestaña Facturas primero.</p>
+                {yaLegalizados > 0 ? (
+                  <>
+                    <p className="text-sm text-slate-400">No hay gastos sin legalizar disponibles.</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Tienes {yaLegalizados} gasto{yaLegalizados === 1 ? '' : 's'} registrado{yaLegalizados === 1 ? '' : 's'}, pero ya {yaLegalizados === 1 ? 'está vinculado' : 'están vinculados'} a otra legalización.
+                      Registra nuevos gastos en la pestaña Facturas para incluirlos aquí.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-slate-400">No hay gastos disponibles.</p>
+                    <p className="text-xs text-slate-400 mt-1">Registra gastos en la pestaña Facturas primero.</p>
+                  </>
+                )}
               </div>
             ) : (
               <>
