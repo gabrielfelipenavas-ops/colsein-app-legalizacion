@@ -91,13 +91,16 @@ export default function UsuariosPage() {
       if (!payload.password) delete payload.password;
       if (!payload.lider_regional_id) payload.lider_regional_id = null;
 
-      if (editingId) {
-        await userAPI.update(editingId, payload);
-      } else {
-        await userAPI.create(payload);
-      }
+      const { data } = editingId
+        ? await userAPI.update(editingId, payload)
+        : await userAPI.create(payload);
       setShowModal(false);
       await load();
+      if (data?.email_credenciales_enviado === true) {
+        alert(`Se envió un correo a ${data.email} con los datos de acceso.`);
+      } else if (data?.email_credenciales_enviado === false) {
+        alert('El usuario se guardó, pero NO se pudo enviar el correo con las credenciales (revisa la configuración SMTP del servidor). Comparte los datos de acceso manualmente.');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Error al guardar');
     }
@@ -224,11 +227,16 @@ export default function UsuariosPage() {
               <div>
                 <label className="label-field">{editingId ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña *'}</label>
                 <div className="relative">
-                  <input type={showPass ? 'text' : 'password'} placeholder={editingId ? 'Sin cambios' : 'Mínimo 6 caracteres'} value={form.password} onChange={e => u('password', e.target.value)} className="input-field !pr-10" />
+                  <input type={showPass ? 'text' : 'password'} placeholder={editingId ? 'Sin cambios' : 'Mínimo 8 caracteres'} value={form.password} onChange={e => u('password', e.target.value)} className="input-field !pr-10" />
                   <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {editingId
+                    ? 'Si cambias la contraseña, el usuario recibirá un correo con sus nuevos datos de acceso.'
+                    : 'El usuario recibirá un correo con su email y contraseña para ingresar a la app.'}
+                </p>
               </div>
 
               <div>

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
-import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, Calculator, LogOut } from 'lucide-react';
+import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, Calculator, LogOut, KeyRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
+import ChangePasswordModal from './ChangePasswordModal';
 
 const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
 
@@ -22,6 +24,7 @@ const ADMIN_ROLES = ['administrador', 'gerente_general', 'presidente'];
 
 export default function AppLayout() {
   const { user, logout, isAuthenticated } = useAuth();
+  const [showChangePassword, setShowChangePassword] = useState(false);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const isApprover = APPROVER_ROLES.includes(user?.rol);
@@ -43,6 +46,9 @@ export default function AppLayout() {
           </div>
           <div className="flex gap-2 items-center">
             <NotificationsPanel />
+            <button onClick={() => setShowChangePassword(true)} title="Cambiar contraseña" className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+              <KeyRound size={16} />
+            </button>
             <button onClick={logout} className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
               <LogOut size={16} />
             </button>
@@ -69,6 +75,8 @@ export default function AppLayout() {
           </NavLink>
         ))}
       </nav>
+
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
     </div>
   );
 }

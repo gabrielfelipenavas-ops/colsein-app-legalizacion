@@ -114,7 +114,57 @@ async function notify({ user_id, tipo = 'info', titulo, mensaje, ref_tipo = null
   return notif;
 }
 
+// Correo de bienvenida con las credenciales de acceso para un usuario nuevo
+// (o cuya contraseña restableció el administrador). No crea notificación
+// in-app (el usuario aún no ha entrado a la app). Devuelve true si se envió.
+async function sendCredentialsEmail({ nombre, email, password, esNuevo = true }) {
+  const t = getTransporter();
+  if (!t) {
+    console.warn('[notifications] SMTP no configurado — no se pudo enviar el correo de credenciales a', email);
+    return false;
+  }
+  const titulo = esNuevo ? 'Bienvenido(a) al Sistema de Legalizaciones' : 'Tu contraseña fue restablecida';
+  const intro = esNuevo
+    ? `Hola ${esc(nombre)}, se creó tu cuenta en el Sistema de Legalizaciones de COLSEIN S.A.S. Estos son tus datos de acceso:`
+    : `Hola ${esc(nombre)}, un administrador restableció tu contraseña. Estos son tus nuevos datos de acceso:`;
+  const html = `
+    <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <div style="background: linear-gradient(135deg, #0ea5e9, #0369a1); color: white; padding: 20px; border-radius: 12px 12px 0 0;">
+        <h2 style="margin: 0; font-size: 18px;">COLSEIN S.A.S.</h2>
+        <p style="margin: 4px 0 0; opacity: 0.85; font-size: 13px;">Sistema de Legalizaciones</p>
+      </div>
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-top: none; padding: 24px; border-radius: 0 0 12px 12px;">
+        <h3 style="margin: 0 0 12px; color: #0f172a;">${titulo}</h3>
+        <p style="margin: 0 0 16px; color: #475569; font-size: 14px; line-height: 1.6;">${intro}</p>
+        <div style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 16px; font-size: 14px; color: #0f172a;">
+          <p style="margin: 0 0 8px;"><strong>Usuario:</strong> ${esc(email)}</p>
+          <p style="margin: 0;"><strong>Contraseña:</strong> ${esc(password)}</p>
+        </div>
+        <p style="margin: 0 0 16px; color: #475569; font-size: 13px; line-height: 1.6;">
+          Por seguridad, te recomendamos cambiar esta contraseña al ingresar: toca el ícono de la
+          llave en la parte superior de la app y elige una contraseña nueva.
+        </p>
+        <a href="${APP_URL}" style="display: inline-block; background: #0ea5e9; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; margin-top: 8px; font-size: 14px;">Ingresar a la app</a>
+        <p style="margin: 24px 0 0; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0; padding-top: 12px;">Este es un mensaje automático, por favor no respondas a este correo.</p>
+      </div>
+    </div>
+  `;
+  try {
+    await t.sendMail({
+      from: FROM,
+      to: email,
+      subject: `[COLSEIN] ${titulo}`,
+      html,
+    });
+    return true;
+  } catch (err) {
+    console.error('[notifications] Error enviando correo de credenciales:', err.message);
+    return false;
+  }
+}
+
 async function notifyRoles(roles, payload) {
+  if (!roles || roles.length === 0) return;
   try {
     const recipients = await db.User.findAll({
       where: { rol: roles, activo: true },
@@ -126,4 +176,4 @@ async function notifyRoles(roles, payload) {
   }
 }
 
-module.exports = { notify, notifyRoles };
+module.exports = { notify, notifyRoles, sendCredentialsEmail };

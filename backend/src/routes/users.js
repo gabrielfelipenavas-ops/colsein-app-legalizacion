@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { ADMIN_SISTEMA } = require('../roles');
+const { sendCredentialsEmail } = require('../services/notifications');
 
 // GET /api/users
 router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', ...ADMIN_SISTEMA), async (req, res) => {
@@ -23,7 +24,8 @@ router.post('/', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
     const password_hash = await bcrypt.hash(password, 12);
     const user = await db.User.create({ nombre, cedula, email, password_hash, rol, zona, vehiculo_tipo, placa, telefono, lider_regional_id });
     const { password_hash: _, ...userData } = user.toJSON();
-    res.status(201).json(userData);
+    const email_credenciales_enviado = await sendCredentialsEmail({ nombre, email, password, esNuevo: true });
+    res.status(201).json({ ...userData, email_credenciales_enviado });
   } catch (err) {
     console.error(err);
     if (err.name === 'SequelizeUniqueConstraintError') {
@@ -39,13 +41,20 @@ router.put('/:id', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
     const user = await db.User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ error: 'No encontrado' });
     const updateData = { ...req.body };
-    if (updateData.password) {
-      updateData.password_hash = await bcrypt.hash(updateData.password, 12);
+    const nuevaPassword = updateData.password;
+    if (nuevaPassword) {
+      if (String(nuevaPassword).length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+      updateData.password_hash = await bcrypt.hash(nuevaPassword, 12);
       delete updateData.password;
     }
     await user.update(updateData);
     const { password_hash, ...userData } = user.toJSON();
-    res.json(userData);
+    // Si el administrador restableció la contraseña, avisar al usuario por correo
+    let email_credenciales_enviado;
+    if (nuevaPassword) {
+      email_credenciales_enviado = await sendCredentialsEmail({ nombre: user.nombre, email: user.email, password: nuevaPassword, esNuevo: false });
+    }
+    res.json(email_credenciales_enviado === undefined ? userData : { ...userData, email_credenciales_enviado });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
   }

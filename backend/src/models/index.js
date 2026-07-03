@@ -257,10 +257,11 @@ const Establishment = sequelize.define('Establishment', {
   veces: { type: Sequelize.INTEGER, defaultValue: 1 },
 }, { tableName: 'establishments', underscored: true });
 
-// ── AuthRequest (Solicitud de autorización: taxis/apps y gastos especiales) ──
+// ── AuthRequest (Solicitud de autorización: taxis/apps, gastos especiales y
+// modificación de legalizaciones ya enviadas) ──
 const AuthRequest = sequelize.define('AuthRequest', {
   user_id: { type: Sequelize.INTEGER, allowNull: false },
-  tipo: { type: Sequelize.ENUM('taxi', 'gasto_especial'), allowNull: false, defaultValue: 'taxi' },
+  tipo: { type: Sequelize.ENUM('taxi', 'gasto_especial', 'modificacion'), allowNull: false, defaultValue: 'taxi' },
   concepto: { type: Sequelize.STRING(300), allowNull: false },
   monto: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   detalle: Sequelize.TEXT,

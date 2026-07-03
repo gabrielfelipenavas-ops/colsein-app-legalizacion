@@ -58,6 +58,11 @@ cd frontend && npm run build
 
 ## Flujo de aprobaciones
 Vendedor envía → Líder Regional revisa → Gerente Ventas aprueba → Control Interno audita
+- Nadie aprueba sus propias solicitudes
+- Lo que envía un gerente (ventas o general) SOLO lo autoriza el presidente
+- El presidente no requiere autorización: sus envíos quedan aprobados automáticamente
+- Legalizaciones enviadas quedan bloqueadas; para editarlas el usuario solicita autorización de modificación (tipo `modificacion` en authorization_requests) y un gerente/presidente la aprueba → la legalización vuelve a borrador
+- Al crear un usuario (o restablecer su contraseña) se le envían las credenciales por correo (requiere SMTP en .env); cada usuario cambia su contraseña desde el ícono de llave en la app (PUT /api/auth/password)
 
 ## API principal
 - POST /api/auth/login — { email, password } → { token, user }
