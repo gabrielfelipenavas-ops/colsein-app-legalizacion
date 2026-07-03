@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
-const { ROLES, GERENTES, AUTORIZADORES_ESPECIALES } = require('../roles');
+const { ROLES, GERENTES, AUTORIZADORES_ESPECIALES, puedeAprobar } = require('../roles');
 
 const TIPOS = ['taxi', 'gasto_especial', 'modificacion'];
 
@@ -40,11 +40,10 @@ router.get('/pending', auth, requireRole(...AUTORIZADORES_ESPECIALES), async (re
       include: [{ model: db.User, attributes: ['id', 'nombre', 'zona', 'rol'] }],
       order: [['created_at', 'ASC']],
     });
-    // Las solicitudes de un gerente SOLO las autoriza el presidente; nadie ve
-    // las suyas propias como pendientes por autorizar.
-    if (req.user.rol !== ROLES.PRESIDENTE) {
-      list = list.filter((s) => !GERENTES.includes(s.User?.rol) && s.user_id !== req.user.id);
-    }
+    // Cada autorizador solo ve las solicitudes que la jerarquía le permite
+    // decidir (gerentes → solo presidente; línea AVEVA → su gerente AVEVA),
+    // y nadie ve las suyas propias como pendientes por autorizar.
+    list = list.filter((s) => s.user_id !== req.user.id && puedeAprobar(req.user.rol, s.User?.rol));
     res.json(list);
   } catch (err) {
     res.status(500).json({ error: 'Error' });
@@ -102,8 +101,13 @@ router.post('/', auth, async (req, res) => {
       return res.status(201).json(solicitud);
     }
 
-    // Las solicitudes de un gerente SOLO las autoriza el presidente
-    const destinatarios = GERENTES.includes(req.user.rol) ? [ROLES.PRESIDENTE] : AUTORIZADORES_ESPECIALES;
+    // Las solicitudes de un gerente SOLO las autoriza el presidente; las de un
+    // desarrollador AVEVA las decide su gerente AVEVA.
+    const destinatarios = req.user.rol === ROLES.DESARROLLADOR_AVEVA
+      ? [ROLES.GERENTE_AVEVA]
+      : GERENTES.includes(req.user.rol)
+        ? [ROLES.PRESIDENTE]
+        : [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL, ROLES.PRESIDENTE];
     const montoFmt = parseFloat(solicitud.monto || 0).toLocaleString('es-CO');
     notifyRoles(destinatarios, {
       tipo: 'info',
@@ -135,9 +139,10 @@ router.post('/:id/decide', auth, requireRole(...AUTORIZADORES_ESPECIALES), async
     if (solicitud.user_id === req.user.id) {
       return res.status(403).json({ error: 'No puedes autorizar tus propias solicitudes' });
     }
-    // Las solicitudes de un gerente SOLO las autoriza el presidente
-    if (GERENTES.includes(solicitud.User?.rol) && req.user.rol !== ROLES.PRESIDENTE) {
-      return res.status(403).json({ error: 'Las solicitudes de un gerente solo las autoriza el presidente' });
+    // Jerarquía: las de un gerente SOLO las autoriza el presidente; las de un
+    // desarrollador AVEVA, su gerente AVEVA (o el presidente).
+    if (!puedeAprobar(req.user.rol, solicitud.User?.rol)) {
+      return res.status(403).json({ error: 'Esta solicitud debe autorizarla un nivel superior de la jerarquía' });
     }
 
     const { action, comentarios } = req.body;

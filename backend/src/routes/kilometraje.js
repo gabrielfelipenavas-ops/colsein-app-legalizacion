@@ -226,13 +226,13 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
 
     await report.update({ estado: 'enviado', fecha_envio: new Date() });
 
-    // Los reportes de un gerente solo los autoriza el presidente; el resto pasa
-    // por el flujo normal (líder regional + gerencias).
-    const destinatarios = GERENTES.includes(req.user.rol)
-      ? [ROLES.PRESIDENTE]
-      : req.user.rol === ROLES.ADMIN
-        ? aprobadoresDe(req.user.rol)
-        : [ROLES.LIDER, ...aprobadoresDe(req.user.rol)];
+    // Destinatarios según jerarquía: gerentes → presidente; desarrollador AVEVA →
+    // gerente AVEVA; admin → gerencia general/presidencia; el flujo normal pasa
+    // primero por el líder regional además de las gerencias.
+    const sinLider = [ROLES.ADMIN, ROLES.DESARROLLADOR_AVEVA, ...GERENTES].includes(req.user.rol);
+    const destinatarios = sinLider
+      ? aprobadoresDe(req.user.rol)
+      : [ROLES.LIDER, ...aprobadoresDe(req.user.rol)];
 
     const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const periodo = `${meses[report.periodo_mes - 1]} ${report.periodo_anio}`;
@@ -334,7 +334,7 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     let estado;
     if (req.user.rol === 'lider_regional') estado = 'enviado';
-    else if (req.user.rol === 'gerente_ventas') estado = ['enviado', 'revisado'];
+    else if (['gerente_ventas', 'gerente_aveva'].includes(req.user.rol)) estado = ['enviado', 'revisado'];
     else estado = ['enviado', 'revisado', 'aprobado', 'rechazado']; // gerente_general, presidente, control_interno, contabilidad: ven todo
 
     let reports = await db.KilometrageReport.findAll({
@@ -346,11 +346,10 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    // Líder y gerente de ventas no ven reportes de admin / gerentes / presidente:
-    // esos los autoriza un nivel superior (los de gerentes, solo el presidente).
-    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS].includes(req.user.rol)) {
-      const superiores = [ROLES.ADMIN, ...GERENTES, ROLES.PRESIDENTE];
-      reports = reports.filter((r) => !superiores.includes(r.User?.rol));
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven los reportes que la jerarquía les permite aprobar.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      reports = reports.filter((r) => puedeAprobar(req.user.rol, r.User?.rol));
     }
     res.json(reports);
   } catch (err) {

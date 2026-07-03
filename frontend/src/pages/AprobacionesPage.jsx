@@ -384,10 +384,21 @@ export default function AprobacionesPage() {
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(null);
 
-  const esAutorizador = ['gerente_ventas', 'gerente_general', 'presidente'].includes(user?.rol);
+  const esAutorizador = ['gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente'].includes(user?.rol);
 
-  const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente'];
-  const GERENTES = ['gerente_ventas', 'gerente_general'];
+  const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente'];
+  const GERENTES = ['gerente_ventas', 'gerente_general', 'gerente_aveva'];
+
+  // Réplica de la regla de jerarquía del backend (roles.js → puedeAprobar)
+  const puedeAprobar = (rol, emisor) => {
+    if (emisor === 'presidente') return false;
+    if (GERENTES.includes(emisor)) return rol === 'presidente';
+    if (emisor === 'administrador') return ['gerente_general', 'presidente'].includes(rol);
+    if (emisor === 'desarrollador_aveva') return ['gerente_aveva', 'presidente'].includes(rol);
+    if (rol === 'gerente_aveva') return false; // el gerente AVEVA solo aprueba a su línea
+    return APROBADORES.includes(rol);
+  };
+
   const canApproveItem = (item) => {
     const rol = user?.rol;
     // Administrador, control interno y contabilidad: solo lectura/auditoría, no aprueban
@@ -397,12 +408,7 @@ export default function AprobacionesPage() {
     const emisorId = item.user_id ?? item.User?.id;
     if (emisorId === user?.id) return false;
 
-    // Jerarquía: lo del presidente no requiere autorización; lo de los gerentes
-    // SOLO lo autoriza el presidente; lo de admin → gerente general/presidente
-    const emisor = item.User?.rol;
-    if (emisor === 'presidente') return false;
-    if (GERENTES.includes(emisor) && rol !== 'presidente') return false;
-    if (emisor === 'administrador' && !['gerente_general', 'presidente'].includes(rol)) return false;
+    if (!puedeAprobar(rol, item.User?.rol)) return false;
 
     if (tab === 'legalizaciones') return ['enviado', 'revisado'].includes(item.estado);
     if (tab === 'kilometrajes') {
@@ -416,8 +422,7 @@ export default function AprobacionesPage() {
   const canDecideAutorizacion = (sol) => {
     if (!esAutorizador) return false;
     if (sol.user_id === user?.id) return false; // nadie se autoriza a sí mismo
-    if (GERENTES.includes(sol.User?.rol) && user?.rol !== 'presidente') return false; // lo de gerentes → solo presidente
-    return true;
+    return puedeAprobar(user?.rol, sol.User?.rol);
   };
 
   const load = async () => {
@@ -610,7 +615,7 @@ export default function AprobacionesPage() {
                     </div>
                   ) : (
                     <p className="text-[10px] text-slate-400 text-center py-1">
-                      {sol.user_id === user?.id ? 'Tu propia solicitud: la autoriza otro nivel' : 'Esta solicitud la autoriza el presidente'}
+                      {sol.user_id === user?.id ? 'Tu propia solicitud: la autoriza otro nivel' : 'Esta solicitud la autoriza otro nivel de la jerarquía'}
                     </p>
                   )}
                 </div>

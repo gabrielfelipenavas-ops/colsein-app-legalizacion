@@ -30,7 +30,7 @@ const User = sequelize.define('User', {
   cedula: { type: Sequelize.STRING(20), allowNull: false, unique: true },
   email: { type: Sequelize.STRING(100), allowNull: false, unique: true },
   password_hash: { type: Sequelize.STRING(255), allowNull: false },
-  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente'), defaultValue: 'comercial' },
+  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente', 'gerente_aveva', 'desarrollador_aveva'), defaultValue: 'comercial' },
   zona: Sequelize.STRING(100),
   lider_regional_id: Sequelize.INTEGER,
   vehiculo_tipo: { type: Sequelize.ENUM('CARRO', 'MOTO'), defaultValue: 'CARRO' },

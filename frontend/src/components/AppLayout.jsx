@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 
-const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
+const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
 
 const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },

@@ -8,7 +8,7 @@ const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = r
 router.get('/', auth, async (req, res) => {
   try {
     const where = {};
-    if (req.user.rol === 'comercial') where.user_id = req.user.id;
+    if (!VISORES.includes(req.user.rol)) where.user_id = req.user.id;
     const legalizations = await db.ExpenseLegalization.findAll({
       where,
       include: [
@@ -30,7 +30,7 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   try {
     const where = {};
     if (req.user.rol === 'lider_regional') where.estado = 'enviado';
-    else if (req.user.rol === 'gerente_ventas') where.estado = ['enviado', 'revisado'];
+    else if (['gerente_ventas', 'gerente_aveva'].includes(req.user.rol)) where.estado = ['enviado', 'revisado'];
     else where.estado = ['enviado', 'revisado', 'aprobado', 'rechazado']; // dirección/auditoría ven todo
 
     let legalizations = await db.ExpenseLegalization.findAll({
@@ -43,12 +43,11 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    // Los aprobadores de primer nivel (líder / gerente de ventas) NO ven las
-    // legalizaciones de administrador / gerentes / presidente: esas las
-    // autoriza un nivel superior (las de los gerentes, solo el presidente).
-    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS].includes(req.user.rol)) {
-      const superiores = [ROLES.ADMIN, ...GERENTES, ROLES.PRESIDENTE];
-      legalizations = legalizations.filter((l) => !superiores.includes(l.User?.rol));
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven lo que la jerarquía les permite aprobar: no lo de admin, gerentes
+    // ni presidente; la línea AVEVA solo la ve/aprueba su gerente AVEVA.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      legalizations = legalizations.filter((l) => puedeAprobar(req.user.rol, l.User?.rol));
     }
     res.json(legalizations);
   } catch (err) {

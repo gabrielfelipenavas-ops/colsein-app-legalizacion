@@ -11,6 +11,8 @@ const ROLES = [
   { value: 'contabilidad', label: 'Contabilidad', color: 'bg-teal-100 text-teal-700' },
   { value: 'administrador', label: 'Administrador', color: 'bg-red-100 text-red-700' },
   { value: 'gerente_general', label: 'Gerente General', color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'gerente_aveva', label: 'Gerente AVEVA', color: 'bg-cyan-100 text-cyan-700' },
+  { value: 'desarrollador_aveva', label: 'Desarrollador de Negocios AVEVA', color: 'bg-sky-100 text-sky-700' },
   { value: 'presidente', label: 'Presidente', color: 'bg-slate-800 text-white' },
 ];
 

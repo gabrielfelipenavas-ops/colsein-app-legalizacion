@@ -9,7 +9,7 @@ const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = r
 router.get('/', auth, async (req, res) => {
   try {
     const where = {};
-    if (req.user.rol === 'comercial') where.user_id = req.user.id;
+    if (!VISORES.includes(req.user.rol)) where.user_id = req.user.id;
     const requests = await db.TravelRequest.findAll({
       where,
       include: [{ model: db.User, attributes: ['id', 'nombre', 'zona'] }],
@@ -38,11 +38,10 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    // Líder y gerente de ventas no ven anticipos de admin / gerentes / presidente:
-    // esos los autoriza un nivel superior (los de gerentes, solo el presidente).
-    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS].includes(req.user.rol)) {
-      const superiores = [ROLES.ADMIN, ...GERENTES, ROLES.PRESIDENTE];
-      requests = requests.filter((r) => !superiores.includes(r.User?.rol));
+    // Los aprobadores de primer nivel (líder / gerente de ventas / gerente AVEVA)
+    // solo ven los anticipos que la jerarquía les permite aprobar.
+    if ([ROLES.LIDER, ROLES.GERENTE_VENTAS, ROLES.GERENTE_AVEVA].includes(req.user.rol)) {
+      requests = requests.filter((r) => puedeAprobar(req.user.rol, r.User?.rol));
     }
     res.json(requests);
   } catch (err) {
