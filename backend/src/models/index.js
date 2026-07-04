@@ -5,6 +5,12 @@ const config = require('../../config/database.js');
 const env = process.env.NODE_ENV || 'development';
 const dbConfig = config[env];
 
+// Los timestamps se exponen en snake_case (created_at / updated_at) para que el
+// JSON del API sea consistente con el resto de columnas y con lo que el frontend
+// espera (sin esto, Sequelize serializa createdAt/updatedAt en camelCase y el
+// frontend mostraba "Invalid Date" al leer created_at).
+const defineDefaults = { createdAt: 'created_at', updatedAt: 'updated_at' };
+
 const sequelize = process.env.DATABASE_URL && env === 'production'
   ? new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
@@ -13,6 +19,7 @@ const sequelize = process.env.DATABASE_URL && env === 'production'
         ? {}
         : { ssl: { require: true, rejectUnauthorized: false } },
       pool: dbConfig.pool || { max: 10, min: 2, acquire: 30000, idle: 10000 },
+      define: defineDefaults,
     })
   : new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {
       host: dbConfig.host,
@@ -20,6 +27,7 @@ const sequelize = process.env.DATABASE_URL && env === 'production'
       dialect: dbConfig.dialect,
       logging: dbConfig.logging,
       pool: dbConfig.pool || { max: 10, min: 2, acquire: 30000, idle: 10000 },
+      define: defineDefaults,
     });
 
 const db = {};

@@ -6,10 +6,51 @@ export const fmt = (n) =>
 
 export const fmtNum = (n) => new Intl.NumberFormat('es-CO').format(n);
 
+// Parseo defensivo de fechas: acepta Date, ISO ('2026-07-03' o con hora) y
+// devuelve null si el valor es ausente o inválido (nunca un Date inválido).
+export const parseDateSafe = (d) => {
+  if (!d) return null;
+  const date = typeof d === 'string' ? new Date(d + (d.includes('T') ? '' : 'T12:00:00')) : new Date(d);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 export const dateStr = (d) => {
-  if (!d) return '';
-  const date = typeof d === 'string' ? new Date(d + (d.includes('T') ? '' : 'T12:00:00')) : d;
+  const date = parseDateSafe(d);
+  if (!date) return '—';
   return date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Tiempo relativo ("ahora", "5m", "3h", "2d") con fallback seguro para
+// fechas ausentes o inválidas.
+export const timeAgo = (d) => {
+  const date = parseDateSafe(d);
+  if (!date) return '—';
+  const sec = Math.floor((new Date() - date) / 1000);
+  if (sec < 60) return 'ahora';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  const days = Math.floor(h / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' });
+};
+
+// Rango razonable para la fecha de un gasto (espejo de backend/src/utils/dates.js).
+// Devuelve null si es válida; si no, el mensaje de advertencia para el usuario.
+export const FECHA_GASTO_MAX_ANIOS = 2;
+export const validarFechaGasto = (fecha) => {
+  if (!fecha) return 'La fecha del gasto es obligatoria';
+  const d = parseDateSafe(fecha);
+  if (!d) return 'La fecha del gasto no es válida';
+  const hoy = new Date();
+  hoy.setHours(23, 59, 59, 999);
+  if (d > hoy) return 'La fecha del gasto no puede ser futura';
+  const limite = new Date();
+  limite.setFullYear(limite.getFullYear() - FECHA_GASTO_MAX_ANIOS);
+  limite.setHours(0, 0, 0, 0);
+  if (d < limite) return `La fecha (${dateStr(d)}) es muy antigua (más de ${FECHA_GASTO_MAX_ANIOS} años) — probablemente el OCR la leyó mal. Verifícala.`;
+  return null;
 };
 
 export const monthName = (m) =>

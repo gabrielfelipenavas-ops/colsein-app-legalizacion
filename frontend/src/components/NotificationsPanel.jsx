@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Bell, X, CheckCheck, CheckCircle, XCircle, Send, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationAPI } from '../services/api';
+import { timeAgo } from '../utils/helpers';
 
 const TIPO_ICON = {
   enviado: Send,
@@ -24,20 +25,6 @@ const REF_ROUTE = {
   anticipo: '/viajes',
   legalizacion: '/legalizacion',
 };
-
-function timeAgo(date) {
-  const now = new Date();
-  const d = new Date(date);
-  const sec = Math.floor((now - d) / 1000);
-  if (sec < 60) return 'ahora';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h`;
-  const days = Math.floor(h / 24);
-  if (days < 7) return `${days}d`;
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' });
-}
 
 export default function NotificationsPanel() {
   const navigate = useNavigate();
@@ -148,7 +135,7 @@ export default function NotificationsPanel() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className={`text-xs ${!n.leida ? 'font-extrabold' : 'font-semibold'} text-slate-800 truncate`}>{n.titulo}</p>
-                      <span className="text-[10px] text-slate-400 shrink-0">{timeAgo(n.created_at)}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">{timeAgo(n.created_at ?? n.createdAt)}</span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{n.mensaje}</p>
                     {!n.leida && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mt-1" />}

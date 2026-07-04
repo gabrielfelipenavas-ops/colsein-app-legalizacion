@@ -17,7 +17,10 @@ export default function HomePage() {
   const entries = dashboard?.recent_entries || [];
   const totalKm = parseFloat(report?.total_km || 0);
   const valorTotal = parseFloat(report?.valor_total || 0);
-  const numVisitas = entries.length;
+  // Visitas DEL MES ACTUAL (misma fuente que usa Reportes: current_report_visitas).
+  // Antes se usaba entries.length, que son los últimos 10 registros de CUALQUIER
+  // periodo (por eso Inicio decía "10 visitas" mientras Reportes decía "1 del mes").
+  const numVisitas = dashboard?.current_report_visitas ?? 0;
 
   return (
     <>
@@ -27,7 +30,7 @@ export default function HomePage() {
           <div className="bg-gradient-to-br from-colsein-500 to-colsein-700 rounded-2xl p-4 text-white">
             <p className="text-[10px] opacity-80 font-semibold uppercase tracking-wide">Km este mes</p>
             <p className="text-2xl font-extrabold mt-1 tracking-tight">{fmtNum(totalKm)}</p>
-            <p className="text-[11px] opacity-60 mt-0.5">{numVisitas} visitas</p>
+            <p className="text-[11px] opacity-60 mt-0.5">{numVisitas} visita{numVisitas === 1 ? '' : 's'} este mes</p>
           </div>
           <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-2xl p-4 text-white">
             <p className="text-[10px] opacity-80 font-semibold uppercase tracking-wide">Valor a pagar</p>
