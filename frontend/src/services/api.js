@@ -164,6 +164,7 @@ export const reportAPI = {
   downloadLegalizacionFacturas: (legId) => api.get(`/reports/legalizacion/${legId}/facturas`, { responseType: 'blob' }),
   downloadAnticipoExcel: (id) => api.get(`/reports/anticipo/${id}/excel`, { responseType: 'blob' }),
   downloadMonthlyPack: (year, month) => api.get(`/reports/monthly-pack/${year}/${month}`, { responseType: 'blob' }),
+  downloadManualPdf: () => api.get('/reports/manual/pdf', { responseType: 'blob' }),
 };
 
 // ── CONFIG ──
