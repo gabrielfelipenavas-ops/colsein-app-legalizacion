@@ -57,6 +57,20 @@ export default function ReportesPage() {
     setDownloading(false);
   };
 
+  const downloadManual = async () => {
+    setDownloading(true);
+    try {
+      const { data } = await reportAPI.downloadManualPdf();
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Manual_de_Uso_COLSEIN.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al descargar el manual'); }
+    setDownloading(false);
+  };
+
   const downloadMonthlyPack = async () => {
     setDownloadingPack(true);
     try {
@@ -143,6 +157,7 @@ export default function ReportesPage() {
         {[
           { label: 'Registro de Medios de Transporte (Excel)', desc: 'Formato oficial V.08 con tarifas vigentes', action: downloadExcel, enabled: !!report },
           { label: 'Legalización de Gastos (Excel)', desc: 'Desglose por día y categoría', action: downloadLegExcel, enabled: legalizations.length > 0 },
+          { label: 'Manual de Uso de la App (PDF)', desc: 'Guía completa: instalación en el celular y uso de cada sección', action: downloadManual, enabled: true },
         ].map((doc, i) => (
           <button key={i} onClick={doc.action} disabled={!doc.enabled || downloading} className="w-full flex items-center gap-3 py-3 border-b border-slate-100 last:border-0 text-left disabled:opacity-40 hover:bg-slate-50 transition-colors rounded-lg px-1">
             <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">

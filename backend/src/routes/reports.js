@@ -3,6 +3,7 @@ const db = require('../models');
 const { Op } = require('sequelize');
 const { auth } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
+const { generateManualPdf } = require('../services/manualPdf');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES } = require('../roles');
@@ -130,6 +131,19 @@ router.get('/anticipo/:id/excel', auth, async (req, res) => {
   } catch (err) {
     console.error('Anticipo Excel error:', err);
     res.status(500).json({ error: 'Error al generar el anticipo' });
+  }
+});
+
+// GET /api/reports/manual/pdf — Manual de Uso de la app en PDF (con logo COLSEIN)
+router.get('/manual/pdf', auth, (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="Manual_de_Uso_COLSEIN.pdf"');
+    const doc = generateManualPdf(process.env.APP_URL);
+    doc.pipe(res);
+  } catch (err) {
+    console.error('Manual PDF error:', err);
+    res.status(500).json({ error: 'No se pudo generar el manual en PDF' });
   }
 });
 
