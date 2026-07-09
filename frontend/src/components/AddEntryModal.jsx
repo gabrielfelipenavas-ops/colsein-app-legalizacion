@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import { X, Car, Bike, Plus, Check, Camera, Trash2, CheckCircle, AlertTriangle, MapPin, Receipt, Building2, DollarSign } from 'lucide-react';
 import { kmAPI, clientAPI, authorizationAPI } from '../services/api';
-import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi } from '../utils/helpers';
+import { fmt, fmtNum, hoyLocal, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi } from '../utils/helpers';
 import MapKmPicker from './MapKmPicker';
+import useModalA11y from '../utils/useModalA11y';
 
 function PhotoUpload({ label, value, onChange, required, colorClass = 'border-emerald-500' }) {
   const ref = useRef(null);
@@ -35,7 +36,7 @@ function PhotoUpload({ label, value, onChange, required, colorClass = 'border-em
 
 export default function AddEntryModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
-    fecha: new Date().toISOString().split('T')[0], cliente_nombre: '', medio: 'CARRO',
+    fecha: hoyLocal(), cliente_nombre: '', medio: 'CARRO',
     km_inicial: '', km_final: '', peajes: '', parqueaderos: '', taxis: '',
     taxi_tipo: '', taxi_origen: '', taxi_destino: '', otros: '',
   });
@@ -48,6 +49,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
   const [creatingClient, setCreatingClient] = useState(false);
   const [authState, setAuthState] = useState('idle'); // idle | sending | sent
   const [showMap, setShowMap] = useState(false);
+  const modalRef = useModalA11y(onClose);
 
   const solicitarAutorizacionTaxi = async () => {
     if (authState === 'sending') return;
@@ -142,10 +144,10 @@ export default function AddEntryModal({ onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[300] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Registrar visita" className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-extrabold">Registrar Visita</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
         </div>
 
         {/* Fecha */}

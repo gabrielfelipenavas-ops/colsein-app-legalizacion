@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { authAPI } from '../services/api';
+import useModalA11y from '../utils/useModalA11y';
 
 export default function ChangePasswordModal({ onClose }) {
   const [current, setCurrent] = useState('');
@@ -10,6 +11,7 @@ export default function ChangePasswordModal({ onClose }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const modalRef = useModalA11y(onClose);
 
   const handleSave = async () => {
     setError('');
@@ -29,10 +31,10 @@ export default function ChangePasswordModal({ onClose }) {
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[200]" onClick={onClose} />
-      <div className="fixed z-[210] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Cambiar contraseña" className="fixed z-[210] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden">
         <div className="bg-white border-b border-slate-100 p-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-bold"><KeyRound size={16} className="text-colsein-500" /> Cambiar contraseña</h3>
-          <button onClick={onClose} className="text-slate-400 p-1"><X size={22} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="text-slate-400 p-1"><X size={22} /></button>
         </div>
 
         {done ? (

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
-import { fmt, validarFechaGasto } from '../utils/helpers';
+import { fmt, hoyLocal, validarFechaGasto } from '../utils/helpers';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -25,7 +25,7 @@ const MEDIOS_PAGO = [
 
 const emptyForm = {
   categoria: 'alimentacion',
-  fecha: new Date().toISOString().split('T')[0],
+  fecha: hoyLocal(),
   establecimiento: '',
   nit_establecimiento: '',
   direccion: '',

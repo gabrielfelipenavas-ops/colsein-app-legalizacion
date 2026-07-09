@@ -3,7 +3,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { X, Car, Bike, MapPin, Navigation, Flag, CheckCircle, Trash2, Undo2, AlertTriangle, Home } from 'lucide-react';
 import { tripAPI } from '../services/api';
-import { fmt, fmtNum, TARIFAS } from '../utils/helpers';
+import { fmt, fmtNum, hoyLocal, TARIFAS } from '../utils/helpers';
+import useModalA11y from '../utils/useModalA11y';
 
 // Obtiene la ubicación actual del dispositivo (GPS del navegador). Gratis.
 function getPosition() {
@@ -73,6 +74,7 @@ function RutaMapa({ puntos, ruta }) {
 }
 
 export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
+  const modalRef = useModalA11y(onClose);
   const [medio, setMedio] = useState(initialTrip?.medio || 'CARRO');
   const [trip, setTrip] = useState(initialTrip || null);
   const [visitName, setVisitName] = useState('');
@@ -97,7 +99,7 @@ export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
 
   const iniciar = () => run(async () => {
     const pos = await getPosition();
-    const { data } = await tripAPI.start({ medio, fecha: new Date().toISOString().split('T')[0], punto: { ...pos, label: 'Salida', tipo: 'salida' } });
+    const { data } = await tripAPI.start({ medio, fecha: hoyLocal(), punto: { ...pos, label: 'Salida', tipo: 'salida' } });
     setTrip(data);
   });
 
@@ -138,10 +140,10 @@ export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[300] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[94vh] overflow-auto p-5 pb-10">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Recorrido GPS" className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[94vh] overflow-auto p-5 pb-10">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-extrabold flex items-center gap-2"><Navigation size={20} className="text-colsein-500" /> Recorrido con GPS</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
         </div>
 
         {error && (
