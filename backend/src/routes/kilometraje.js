@@ -239,12 +239,24 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
       return res.status(409).json({ error: 'Este reporte ya fue enviado. Solo se puede enviar un reporte en borrador o rechazado.' });
     }
 
-    // Validate all entries have required photos
+    // Validate all entries have required photos and taxi data.
+    // Regla de taxis (espejo del frontend): tipo, origen y destino son
+    // obligatorios siempre; la factura/soporte es obligatoria para apps
+    // (Uber/InDriver/DiDi/…), no para taxi convencional o transporte público.
+    const APPS_TAXI_CON_FACTURA = ['Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify'];
     const entries = await db.KilometrageEntry.findAll({ where: { report_id: report.id } });
     for (const e of entries) {
       if (parseFloat(e.peajes) > 0 && !e.peaje_foto) return res.status(400).json({ error: `Falta foto de peaje para ${e.cliente_nombre} (${e.fecha})` });
       if (parseFloat(e.parqueaderos) > 0 && !e.parqueadero_foto) return res.status(400).json({ error: `Falta foto de parqueadero para ${e.cliente_nombre} (${e.fecha})` });
-      if (parseFloat(e.taxis) > 0 && !e.taxi_foto) return res.status(400).json({ error: `Falta foto de taxi para ${e.cliente_nombre} (${e.fecha})` });
+      if (parseFloat(e.taxis) > 0) {
+        if (!e.taxi_tipo || !e.taxi_origen || !e.taxi_destino) {
+          return res.status(400).json({ error: `Falta tipo, origen o destino del taxi para ${e.cliente_nombre} (${e.fecha})` });
+        }
+        if (APPS_TAXI_CON_FACTURA.includes(e.taxi_tipo) && !e.taxi_foto) {
+          return res.status(400).json({ error: `Falta la factura/soporte del taxi por app para ${e.cliente_nombre} (${e.fecha})` });
+        }
+      }
+      if (parseFloat(e.otros) > 0 && !e.otros_foto) return res.status(400).json({ error: `Falta foto del soporte de "otros" para ${e.cliente_nombre} (${e.fecha})` });
     }
 
     // El presidente no requiere autorización: su reporte queda aprobado al enviarlo.
