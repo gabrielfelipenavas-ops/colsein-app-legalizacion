@@ -131,10 +131,13 @@ export default function RecorridoModal({ onClose, onSaved, initialTrip }) {
     onClose();
   });
 
-  const cancelar = () => run(async () => {
-    if (trip && trip.estado !== 'confirmado') { try { await tripAPI.remove(trip.id); } catch {} }
-    onClose();
-  });
+  const cancelar = () => {
+    if (trip && trip.estado !== 'confirmado' && !confirm('¿Cancelar y descartar este recorrido? Se perderán las paradas registradas.')) return;
+    run(async () => {
+      if (trip && trip.estado !== 'confirmado') { try { await tripAPI.remove(trip.id); } catch {} }
+      onClose();
+    });
+  };
 
   const totalNum = parseFloat(totalConfirm) || 0;
 

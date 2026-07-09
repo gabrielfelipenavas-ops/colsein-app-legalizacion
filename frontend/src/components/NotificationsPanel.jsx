@@ -62,8 +62,13 @@ export default function NotificationsPanel() {
     const handler = (e) => {
       if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false);
     };
+    const keyHandler = (e) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', keyHandler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', keyHandler);
+    };
   }, [open]);
 
   const handleClick = async (n) => {
@@ -110,7 +115,7 @@ export default function NotificationsPanel() {
                   <CheckCheck size={12} /> Marcar todas
                 </button>
               )}
-              <button onClick={() => setOpen(false)} className="text-slate-400 p-1"><X size={16} /></button>
+              <button onClick={() => setOpen(false)} aria-label="Cerrar notificaciones" className="text-slate-400 p-1"><X size={16} /></button>
             </div>
           </div>
 

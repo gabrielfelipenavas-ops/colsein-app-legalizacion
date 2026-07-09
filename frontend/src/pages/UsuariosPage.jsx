@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { UserPlus, X, Eye, EyeOff, Shield, Search, Pencil, Power } from 'lucide-react';
 import { userAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useModalA11y from '../utils/useModalA11y';
 
 const ROLES = [
   { value: 'comercial', label: 'Comercial', color: 'bg-blue-100 text-blue-700' },
@@ -109,13 +110,19 @@ export default function UsuariosPage() {
     setSaving(false);
   };
 
+  const [togglingId, setTogglingId] = useState(null);
   const toggleActive = async (u) => {
+    if (togglingId) return;
+    const accion = u.activo ? 'desactivar' : 'activar';
+    if (!confirm(`¿Seguro que quieres ${accion} la cuenta de ${u.nombre}?${u.activo ? ' El usuario perderá el acceso a la app.' : ''}`)) return;
+    setTogglingId(u.id);
     try {
       await userAPI.update(u.id, { activo: !u.activo });
       await load();
     } catch {
       alert('Error al cambiar estado');
     }
+    setTogglingId(null);
   };
 
   const u = (key, val) => setForm(f => ({ ...f, [key]: val }));
@@ -149,7 +156,7 @@ export default function UsuariosPage() {
       {/* Search */}
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input placeholder="Buscar por nombre, email o cédula..." value={search} onChange={e => setSearch(e.target.value)} className="input-field !pl-9" />
+        <input placeholder="Buscar por nombre, email o cédula..." aria-label="Buscar usuarios" value={search} onChange={e => setSearch(e.target.value)} className="input-field !pl-9" />
       </div>
 
       {/* User list */}
@@ -177,7 +184,7 @@ export default function UsuariosPage() {
                     <button onClick={() => openEdit(usr)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors" title="Editar">
                       <Pencil size={14} className="text-slate-500" />
                     </button>
-                    <button onClick={() => toggleActive(usr)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${usr.activo ? 'bg-emerald-100 hover:bg-red-100' : 'bg-red-100 hover:bg-emerald-100'}`} title={usr.activo ? 'Desactivar' : 'Activar'}>
+                    <button onClick={() => toggleActive(usr)} disabled={togglingId === usr.id} aria-label={usr.activo ? `Desactivar a ${usr.nombre}` : `Activar a ${usr.nombre}`} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 ${usr.activo ? 'bg-emerald-100 hover:bg-red-100' : 'bg-red-100 hover:bg-emerald-100'}`} title={usr.activo ? 'Desactivar' : 'Activar'}>
                       <Power size={14} className={usr.activo ? 'text-emerald-600' : 'text-red-500'} />
                     </button>
                   </div>
@@ -193,11 +200,10 @@ export default function UsuariosPage() {
 
       {/* Modal crear/editar */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-[300] flex items-end justify-center" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
-            <div className="flex items-center justify-between mb-5">
+        <UserModalShell onClose={() => setShowModal(false)}>
+          <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-extrabold">{editingId ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
-              <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
+              <button onClick={() => setShowModal(false)} aria-label="Cerrar" className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
             </div>
 
             {error && (
@@ -293,9 +299,20 @@ export default function UsuariosPage() {
               {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UserPlus size={18} />}
               {saving ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Crear Usuario'}
             </button>
-          </div>
-        </div>
+        </UserModalShell>
       )}
+    </div>
+  );
+}
+
+// Contenedor accesible del modal de usuario (Escape, foco, role=dialog)
+function UserModalShell({ onClose, children }) {
+  const modalRef = useModalA11y(onClose);
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[300] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Datos del usuario" className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
+        {children}
+      </div>
     </div>
   );
 }

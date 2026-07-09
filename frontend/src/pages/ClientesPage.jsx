@@ -115,7 +115,7 @@ export default function ClientesPage() {
       {/* Search */}
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input placeholder="Buscar por nombre, NIT o ciudad..." value={search} onChange={e => setSearch(e.target.value)} className="input-field !pl-9" />
+        <input placeholder="Buscar por nombre, NIT o ciudad..." aria-label="Buscar clientes" value={search} onChange={e => setSearch(e.target.value)} className="input-field !pl-9" />
       </div>
 
       {/* Quick add form */}

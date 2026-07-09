@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
 import { fmt, hoyLocal, validarFechaGasto } from '../utils/helpers';
+import useModalA11y from '../utils/useModalA11y';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -126,7 +127,10 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
     } catch {}
   };
 
+  const [downloadingAtt, setDownloadingAtt] = useState(null);
   const downloadAttachment = async (uid, filename) => {
+    if (downloadingAtt) return;
+    setDownloadingAtt(`${uid}-${filename}`);
     try {
       const { data } = await emailAPI.downloadAttachment(uid, filename);
       const url = URL.createObjectURL(data);
@@ -138,6 +142,7 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
     } catch {
       alert('Error al descargar adjunto');
     }
+    setDownloadingAtt(null);
   };
 
   const matchedExpenseIds = new Set(savedMatches.map(m => m.expense_id));
@@ -259,7 +264,7 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
                   attachments: [],
                   match_type: 'manual',
                   confidence: m.confidence,
-                }).then(() => { loadSavedMatches(); onMatchSaved?.(); })}
+                }).then(() => { loadSavedMatches(); onMatchSaved?.(); }).catch(err => alert(err.response?.data?.error || 'No se pudo guardar el cruce'))}
                   className="mt-2 text-[10px] font-bold text-violet-600 underline">
                   Confirmar y guardar este cruce
                 </button>
@@ -342,10 +347,10 @@ function EmailSearchSection({ expenses, onMatchSaved }) {
                       <div className="mt-2">
                         <p className="text-[10px] font-bold text-slate-500 mb-1">Adjuntos:</p>
                         {email.attachments.map((att, j) => (
-                          <button key={j} onClick={() => downloadAttachment(email.id, att.filename)}
-                            className="flex items-center gap-2 w-full p-1.5 bg-blue-50 rounded-lg mb-1 hover:bg-blue-100 transition-colors text-left">
+                          <button key={j} onClick={() => downloadAttachment(email.id, att.filename)} disabled={!!downloadingAtt}
+                            className="flex items-center gap-2 w-full p-1.5 bg-blue-50 rounded-lg mb-1 hover:bg-blue-100 transition-colors text-left disabled:opacity-50">
                             <Download size={12} className="text-blue-500 shrink-0" />
-                            <span className="text-[10px] font-semibold text-blue-700 truncate">{att.filename}</span>
+                            <span className="text-[10px] font-semibold text-blue-700 truncate">{downloadingAtt === `${email.id}-${att.filename}` ? 'Descargando…' : att.filename}</span>
                             <span className="text-[9px] text-blue-400 shrink-0">{att.size ? Math.round(att.size / 1024) + 'KB' : ''}</span>
                           </button>
                         ))}
@@ -470,10 +475,12 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
     setSaving(false);
   };
 
+  const modalRef = useModalA11y(onClose);
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
       <div
+        ref={modalRef} role="dialog" aria-modal="true" aria-label="Detalle del gasto"
         className="fixed inset-0 z-[70] bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[90vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
@@ -481,7 +488,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
           <h3 className="flex items-center gap-2 text-sm font-bold">
             {editing ? <><Edit size={16} className="text-colsein-500" /> Editar gasto</> : <><Eye size={16} className="text-colsein-500" /> Detalle del gasto</>}
           </h3>
-          <button onClick={onClose} className="text-slate-400 p-1"><X size={22} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="text-slate-400 p-1"><X size={22} /></button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
@@ -911,7 +918,7 @@ export default function FacturasPage() {
 
       {preview && !showManual && (
         <div className="card mx-4 mt-3">
-          <img src={preview} alt="Preview" className="w-full rounded-xl max-h-48 object-cover mb-3" />
+          <img src={preview} alt="Vista previa del recibo" className="w-full rounded-xl max-h-48 object-cover mb-3" />
           {processing && (
             <div className="text-center py-4">
               <div className="w-10 h-10 border-3 border-slate-200 border-t-colsein-500 rounded-full animate-spin mx-auto mb-3" />
@@ -975,7 +982,7 @@ export default function FacturasPage() {
           )}
 
           {preview && (
-            <img src={preview} alt="Preview" className="w-full rounded-xl max-h-32 object-cover mb-3" />
+            <img src={preview} alt="Vista previa del recibo" className="w-full rounded-xl max-h-32 object-cover mb-3" />
           )}
 
           {file && !preview && (
@@ -1156,6 +1163,13 @@ export default function FacturasPage() {
       )}
 
       {/* Lista de gastos guardados */}
+      {expenses.length === 0 && (
+        <div className="card mx-4 mt-3 text-center py-8">
+          <DollarSign size={28} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-sm font-semibold text-slate-500">Aún no has registrado gastos</p>
+          <p className="text-xs text-slate-400 mt-1">Usa "Escanear" para leer un recibo con la cámara o "Manual" para digitarlo.</p>
+        </div>
+      )}
       {expenses.length > 0 && (
         <div className="card mx-4 mt-3">
           <h3 className="flex items-center gap-2 text-sm font-bold mb-3"><DollarSign size={16} className="text-emerald-500" /> Gastos Registrados ({expenses.length})</h3>
@@ -1164,7 +1178,7 @@ export default function FacturasPage() {
               <div key={exp.id} className="p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-2 mb-2">
                   {exp.imagen_url && !exp.imagen_url.toLowerCase().endsWith('.pdf') ? (
-                    <img src={exp.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
+                    <img src={exp.imagen_url} alt={`Soporte de ${exp.establecimiento || exp.categoria}`} className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
                   ) : exp.imagen_url ? (
                     <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={16} className="text-blue-500" /></div>
                   ) : (

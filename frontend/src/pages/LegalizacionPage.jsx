@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save, Unlock } from 'lucide-react';
 import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI, authorizationAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useModalA11y from '../utils/useModalA11y';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 
 function StatusBadge({ status }) {
@@ -17,6 +18,7 @@ const CAT_LABELS = {
 };
 
 function NuevaLegalizacionModal({ onClose, onSaved }) {
+  const modalRef = useModalA11y(onClose);
   const [step, setStep] = useState(1);
   const [tipo, setTipo] = useState('local'); // local | viaje
   const [moneda, setMoneda] = useState('COP');
@@ -100,7 +102,7 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[300] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Nueva legalización" className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[92vh] overflow-auto p-5 pb-10">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-extrabold">
             {step === 1 && 'Nueva Legalización'}
@@ -310,6 +312,7 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
 }
 
 function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
+  const modalRef = useModalA11y(onClose);
   let extra = {};
   try { extra = JSON.parse(legalization.observaciones_imprevistos || '{}'); } catch {}
 
@@ -359,6 +362,7 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
     <>
       <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
       <div
+        ref={modalRef} role="dialog" aria-modal="true" aria-label={`Editar legalización ${legalization.id}`}
         className="fixed inset-0 z-[70] bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[90vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
@@ -445,17 +449,23 @@ export default function LegalizacionPage() {
   const [showNew, setShowNew] = useState(false);
   const [editingLeg, setEditingLeg] = useState(null);
 
+  const [submittingId, setSubmittingId] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
+
   const load = () => { legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {}); };
   useEffect(load, []);
 
   const submitLeg = async (leg) => {
+    if (submittingId) return;
     if (!confirm(`¿Enviar la Legalización #${leg.id} para aprobación? Después de enviarla no podrás modificarla sin autorización de gerencia/presidencia.`)) return;
+    setSubmittingId(leg.id);
     try {
       await legalizationAPI.submit(leg.id);
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Error al enviar');
     }
+    setSubmittingId(null);
   };
 
   const solicitarModificacion = async (leg) => {
@@ -481,6 +491,8 @@ export default function LegalizacionPage() {
   };
 
   const downloadLeg = async (legId) => {
+    if (downloadingId) return;
+    setDownloadingId(`excel-${legId}`);
     try {
       const { data } = await reportAPI.downloadLegalizacionExcel(legId);
       const url = URL.createObjectURL(data);
@@ -490,9 +502,12 @@ export default function LegalizacionPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch { alert('Error al descargar'); }
+    setDownloadingId(null);
   };
 
   const downloadFacturas = async (legId) => {
+    if (downloadingId) return;
+    setDownloadingId(`zip-${legId}`);
     try {
       const { data } = await reportAPI.downloadLegalizacionFacturas(legId);
       const url = URL.createObjectURL(data);
@@ -502,6 +517,7 @@ export default function LegalizacionPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch { alert('Error al descargar las facturas'); }
+    setDownloadingId(null);
   };
 
   return (
@@ -542,8 +558,8 @@ export default function LegalizacionPage() {
                           <button onClick={() => setEditingLeg(leg)} className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
                             <Edit size={11} /> Editar
                           </button>
-                          <button onClick={() => submitLeg(leg)} className="text-[10px] text-white bg-colsein-500 hover:bg-colsein-600 rounded-lg px-2 py-1 font-semibold flex items-center gap-1">
-                            <Send size={11} /> Enviar
+                          <button onClick={() => submitLeg(leg)} disabled={submittingId === leg.id} className="text-[10px] text-white bg-colsein-500 hover:bg-colsein-600 rounded-lg px-2 py-1 font-semibold flex items-center gap-1 disabled:opacity-50">
+                            <Send size={11} /> {submittingId === leg.id ? 'Enviando…' : 'Enviar'}
                           </button>
                         </>
                       )}
@@ -552,11 +568,11 @@ export default function LegalizacionPage() {
                           <Unlock size={11} /> Solicitar modificación
                         </button>
                       )}
-                      <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">
-                        <Download size={11} /> Excel
+                      <button onClick={() => downloadLeg(leg.id)} disabled={!!downloadingId} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1 disabled:opacity-50">
+                        <Download size={11} /> {downloadingId === `excel-${leg.id}` ? 'Generando…' : 'Excel'}
                       </button>
-                      <button onClick={() => downloadFacturas(leg.id)} className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                        <Download size={11} /> Facturas
+                      <button onClick={() => downloadFacturas(leg.id)} disabled={!!downloadingId} className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 disabled:opacity-50">
+                        <Download size={11} /> {downloadingId === `zip-${leg.id}` ? 'Generando…' : 'Facturas'}
                       </button>
                     </div>
                   </div>

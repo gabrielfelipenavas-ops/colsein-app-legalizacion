@@ -44,18 +44,25 @@ export default function KilometrajePage() {
   const prevMonth = () => setPeriod(p => ({ month: p.month === 1 ? 12 : p.month - 1, year: p.month === 1 ? p.year - 1 : p.year }));
   const nextMonth = () => setPeriod(p => ({ month: p.month === 12 ? 1 : p.month + 1, year: p.month === 12 ? p.year + 1 : p.year }));
 
+  const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   const handleSubmit = async () => {
-    if (!report) return;
+    if (!report || submitting) return;
+    if (!confirm(`¿Enviar el reporte de ${monthName(period.month - 1)} para revisión? Después de enviarlo no podrás modificarlo.`)) return;
+    setSubmitting(true);
     try {
       await kmAPI.submitReport(report.id);
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Error al enviar');
     }
+    setSubmitting(false);
   };
 
   const downloadExcel = async () => {
-    if (!report) return;
+    if (!report || downloading) return;
+    setDownloading(true);
     try {
       const { data } = await reportAPI.downloadKmExcel(report.id);
       const url = URL.createObjectURL(data);
@@ -63,7 +70,9 @@ export default function KilometrajePage() {
       a.href = url;
       a.download = `Registro_Transporte_${monthName(period.month - 1)}_${period.year}.xlsx`;
       a.click();
+      URL.revokeObjectURL(url);
     } catch { alert('Error al generar Excel'); }
+    setDownloading(false);
   };
 
   return (
@@ -99,8 +108,10 @@ export default function KilometrajePage() {
       {/* Actions */}
       <div className="px-4 pt-3 flex gap-2">
         <button onClick={() => setShowAdd(true)} className="btn-primary flex-1"><Plus size={18} /> Registrar Visita</button>
-        {report && report.estado === 'borrador' && entries.length > 0 && (
-          <button onClick={handleSubmit} className="btn-outline !px-3"><Send size={16} /></button>
+        {report && ['borrador', 'rechazado'].includes(report.estado) && entries.length > 0 && (
+          <button onClick={handleSubmit} disabled={submitting} aria-label="Enviar reporte para revisión" title="Enviar reporte para revisión" className="btn-outline !px-3 disabled:opacity-50">
+            {submitting ? <span className="w-4 h-4 border-2 border-colsein-300 border-t-colsein-600 rounded-full animate-spin" /> : <Send size={16} />}
+          </button>
         )}
       </div>
       <div className="px-4 pt-2">
@@ -195,8 +206,8 @@ export default function KilometrajePage() {
       {/* Download */}
       {report && entries.length > 0 && (
         <div className="px-4 pt-3 pb-2">
-          <button onClick={downloadExcel} className="btn-outline w-full !text-emerald-600 !border-emerald-500 hover:!bg-emerald-50">
-            📊 Descargar Excel Formato Oficial
+          <button onClick={downloadExcel} disabled={downloading} className="btn-outline w-full !text-emerald-600 !border-emerald-500 hover:!bg-emerald-50 disabled:opacity-50">
+            {downloading ? 'Generando Excel…' : '📊 Descargar Excel Formato Oficial'}
           </button>
         </div>
       )}
