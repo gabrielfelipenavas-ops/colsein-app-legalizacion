@@ -1,6 +1,8 @@
 # Prompt de Auditoría Integral — App de Legalizaciones COLSEIN
 
 > **Cómo usarlo:** copia todo el bloque de abajo (desde "## PROMPT") y pégalo como primera instrucción en una sesión nueva de Claude Code (Fable 5) abierta sobre este repositorio. Idealmente ejecútalo en una rama nueva (ej. `audit/correcciones-integrales`) para revisar los cambios antes de fusionar.
+>
+> **Qué entrega al final:** además de las correcciones aplicadas, genera `INFORME_AUDITORIA.md` (informe de hallazgos) y `PROMPT_CORRECCIONES.md` — un segundo prompt listo para pegar en otra sesión de IA que ejecute las correcciones pendientes o que requieren tu decisión.
 
 ---
 
@@ -93,16 +95,28 @@ Revisa exhaustivamente y corrige, con esta lista mínima (no exclusiva):
 5. **No subas secretos** ni pongas valores reales en `.env.example`.
 6. Si encuentras un problema que no puedes corregir con certeza (falta contexto de negocio), NO lo adivines: documéntalo en el informe como "requiere decisión".
 
-### Entregable final
+### Entregables finales
 
-Al terminar, crea `INFORME_AUDITORIA.md` en la raíz con:
+Al terminar, crea DOS archivos en la raíz del repositorio:
+
+**A) `INFORME_AUDITORIA.md`** con:
 
 1. **Resumen ejecutivo** (10 líneas máximo, en español, para gerencia no técnica).
-2. **Tabla de hallazgos**: ID, severidad (Crítica/Alta/Media/Baja), categoría (Seguridad/Funcional/Diseño), descripción, archivo(s):línea, estado (Corregido / Requiere decisión) y commit que lo corrige.
+2. **Tabla de hallazgos**: ID, severidad (Crítica/Alta/Media/Baja), categoría (Seguridad/Funcional/Diseño), descripción, archivo(s):línea, estado (Corregido / Pendiente / Requiere decisión) y commit que lo corrige.
 3. **Cambios de configuración requeridos en el despliegue** (nuevas variables de entorno, rotación de secretos comprometidos, comandos de migración).
 4. **Riesgos residuales y recomendaciones** que quedaron fuera del alcance del código (p. ej. HTTPS en Railway, backups de PostgreSQL, rotación de credenciales de los usuarios de prueba).
 
-Termina entregando: el informe, todos los commits en la rama de trabajo, y la confirmación de que build + backend + pruebas pasan.
+**B) `PROMPT_CORRECCIONES.md`** — un prompt **autocontenido y listo para copiar y pegar** en una sesión nueva de una IA de código (como Claude Code), para que esa IA ejecute las correcciones que quedaron sin resolver. Este prompt debe poder entenderse SIN leer el informe ni esta conversación, así que incluye dentro de él:
+
+1. **Rol e instrucción general**: actuar como desarrollador senior que corrige hallazgos de una auditoría ya realizada, trabajando de forma autónoma sobre este repositorio.
+2. **Contexto mínimo de la app**: stack, estructura de carpetas relevante y las reglas de negocio de COLSEIN que no puede romper (cópialas de este prompt).
+3. **Lista completa de hallazgos a corregir**: todos los que quedaron en estado *Pendiente*, y los *Requiere decisión* acompañados de las opciones concretas entre las que el usuario debe elegir (redactadas para que baste con descomentar o marcar la opción elegida antes de pegar el prompt). Para cada hallazgo incluye: ID (el mismo del informe), severidad, descripción del problema, archivo(s) y línea(s) exactas, causa raíz, y la **corrección específica esperada** con el enfoque técnico recomendado (qué cambiar y cómo, no solo "arréglalo"). Si al auditar corregiste todo y no queda nada pendiente, genera igualmente el archivo con los ítems de riesgo residual convertibles en código (p. ej. agregar pruebas faltantes, endurecer configuración) y dilo explícitamente al inicio del archivo.
+4. **Orden de ejecución** por severidad y dependencias entre correcciones (si una corrección debe hacerse antes que otra, dilo).
+5. **Criterios de verificación por hallazgo**: cómo comprobar que cada corrección funciona (comando, prueba, o pasos manuales concretos), además de la verificación global (build del frontend, arranque del backend, suite de pruebas).
+6. **Las mismas reglas de trabajo de este prompt**: commits atómicos en español por hallazgo (referenciando el ID), no romper el build, no alterar reglas de negocio ni el modelo de datos sin migración reversible, no subir secretos.
+7. **Entregable de cierre**: actualizar la tabla de `INFORME_AUDITORIA.md` marcando los hallazgos corregidos con su commit.
+
+Termina entregando: el informe, el prompt de correcciones, todos los commits en la rama de trabajo, y la confirmación de que build + backend + pruebas pasan.
 
 ---
 
