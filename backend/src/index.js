@@ -38,7 +38,7 @@ app.use(helmet({
 // CORS: en producción solo se permite el origen configurado (FRONTEND_URL). Si no se
 // configura, no se habilita CORS cruzado (la app se sirve desde el mismo origen).
 app.use(cors({ origin: process.env.FRONTEND_URL || (isProd ? false : 'http://localhost:5173'), credentials: true }));
-app.use(morgan('dev'));
+if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
@@ -205,4 +205,7 @@ async function start() {
   }
 }
 
-start();
+// En las pruebas (supertest) se importa la app sin abrir el puerto
+if (require.main === module) start();
+
+module.exports = app;
