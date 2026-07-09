@@ -1,5 +1,6 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
+const { parseFecha } = require('../utils/dates');
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -85,7 +86,7 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
       const totalKm = parseFloat(entry.total_km);
       const valorKm = parseFloat(entry.valor_km);
 
-      ws.getCell(row, 2).value = new Date(entry.fecha);
+      ws.getCell(row, 2).value = parseFecha(entry.fecha) || new Date(entry.fecha);
       ws.getCell(row, 2).numFmt = 'dd/mm/yyyy';
       ws.getCell(row, 3).value = entry.cliente_nombre;
       ws.getCell(row, 4).value = entry.medio;
@@ -266,8 +267,8 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   if (travelRequest) {
     info.push(['MOTIVO VIAJE:', travelRequest.motivo || '']);
     info.push(['DESTINO:', travelRequest.ciudad_destino]);
-    const fIda = new Date(travelRequest.fecha_ida).toLocaleDateString('es-CO');
-    const fReg = new Date(travelRequest.fecha_regreso).toLocaleDateString('es-CO');
+    const fIda = (parseFecha(travelRequest.fecha_ida) || new Date(travelRequest.fecha_ida)).toLocaleDateString('es-CO');
+    const fReg = (parseFecha(travelRequest.fecha_regreso) || new Date(travelRequest.fecha_regreso)).toLocaleDateString('es-CO');
     info.push(['PERIODO:', `${fIda} — ${fReg}`]);
     info.push(['CONSECUTIVO:', travelRequest.consecutivo]);
   }
@@ -560,7 +561,7 @@ async function generateAnticipoExcel(request, user) {
   const lightBlue = 'E8F4FD';
   const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
   const money = '$#,##0';
-  const fdate = (d) => { if (!d) return ''; const x = new Date(d); return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`; };
+  const fdate = (d) => { if (!d) return ''; const x = parseFecha(d) || new Date(d); return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`; };
   const label = (cell, text) => { ws.getCell(cell).value = text; ws.getCell(cell).font = { name: 'Arial', bold: true, size: 9 }; };
   const val = (cell, text) => { ws.getCell(cell).value = text; ws.getCell(cell).font = { name: 'Arial', size: 9 }; };
 

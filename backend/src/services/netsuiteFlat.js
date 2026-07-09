@@ -21,10 +21,13 @@ const MONEDA = 'COP';
 const TIPO_CAMBIO = '1';
 const DEFAULT_IVA = 'C-IVA-19 BN';
 
+const { parseFecha } = require('../utils/dates');
+
 const clean = (s) => String(s == null ? '' : s).replace(/[;\r\n]+/g, ' ').trim();
 
 function fmtFecha(d) {
-  const dt = new Date(d);
+  // parseFecha evita el corrimiento de dia por zona horaria en fechas 'YYYY-MM-DD'
+  const dt = parseFecha(d) || new Date(d);
   if (isNaN(dt)) return '';
   return `${dt.getDate()}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
 }
