@@ -117,7 +117,7 @@ router.put('/:id', auth, async (req, res) => {
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
     if (['enviado', 'revisado', 'aprobado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'No se puede editar una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
+      return res.status(409).json({ error: 'No se puede editar una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
     }
 
     const { ciudades_visitadas, moneda, tipo, motivo, valor_anticipo } = req.body;
@@ -162,35 +162,59 @@ router.put('/:id/expenses', auth, async (req, res) => {
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
     if (['enviado', 'revisado', 'aprobado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'No se pueden modificar los gastos de una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
+      return res.status(409).json({ error: 'No se pueden modificar los gastos de una legalización ya enviada. Solicita autorización de modificación para desbloquearla.' });
     }
 
     const { expense_ids } = req.body;
+    if (expense_ids !== undefined && !Array.isArray(expense_ids)) {
+      return res.status(400).json({ error: 'expense_ids debe ser una lista de IDs de gastos' });
+    }
+    const ids = (expense_ids || []).map((v) => parseInt(v)).filter((v) => Number.isInteger(v) && v > 0);
 
-    // Remove previous associations
-    await db.Expense.update({ legalization_id: null }, { where: { legalization_id: leg.id } });
-
-    // Associate new expenses
-    if (expense_ids && expense_ids.length > 0) {
-      await db.Expense.update(
-        { legalization_id: leg.id },
-        { where: { id: expense_ids, user_id: req.user.id } }
-      );
+    // Un gasto solo puede asociarse si es del usuario y está libre (o ya en esta
+    // legalización). Sin este control, se podían "robar" gastos de otra
+    // legalización ya enviada, alterando sus totales por fuera del bloqueo.
+    if (ids.length > 0) {
+      const ocupados = await db.Expense.count({
+        where: {
+          id: ids,
+          user_id: req.user.id,
+          legalization_id: { [db.Sequelize.Op.not]: null, [db.Sequelize.Op.ne]: leg.id },
+        },
+      });
+      if (ocupados > 0) {
+        return res.status(409).json({ error: 'Uno o más gastos ya pertenecen a otra legalización. Quítalos de la otra legalización primero.' });
+      }
     }
 
-    // Recalculate totals
-    const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id } });
-    // Suma el valor legalizable (excluye propina y excedente de servicio); si un gasto
-    // antiguo no lo tiene, usa el valor total como respaldo.
-    const gasto_real_total = expenses.reduce((sum, e) =>
-      sum + (e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0)), 0);
-    const valor_anticipo = parseFloat(leg.valor_anticipo || 0);
-    const diff = gasto_real_total - valor_anticipo;
+    // Reasociación y recálculo en una transacción (evita estados intermedios
+    // si algo falla a mitad de camino)
+    await db.sequelize.transaction(async (t) => {
+      // Remove previous associations
+      await db.Expense.update({ legalization_id: null }, { where: { legalization_id: leg.id }, transaction: t });
 
-    await leg.update({
-      gasto_real_total,
-      pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
-      pago_favor_empleado: diff > 0 ? diff : 0,
+      // Associate new expenses
+      if (ids.length > 0) {
+        await db.Expense.update(
+          { legalization_id: leg.id },
+          { where: { id: ids, user_id: req.user.id, legalization_id: null }, transaction: t }
+        );
+      }
+
+      // Recalculate totals
+      const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id }, transaction: t });
+      // Suma el valor legalizable (excluye propina y excedente de servicio); si un gasto
+      // antiguo no lo tiene, usa el valor total como respaldo.
+      const gasto_real_total = Math.round(expenses.reduce((sum, e) =>
+        sum + (e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0)), 0) * 100) / 100;
+      const valor_anticipo = parseFloat(leg.valor_anticipo || 0);
+      const diff = Math.round((gasto_real_total - valor_anticipo) * 100) / 100;
+
+      await leg.update({
+        gasto_real_total,
+        pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
+        pago_favor_empleado: diff > 0 ? diff : 0,
+      }, { transaction: t });
     });
 
     const updated = await db.ExpenseLegalization.findByPk(leg.id, {
@@ -212,20 +236,31 @@ router.post('/:id/submit', auth, async (req, res) => {
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (leg.user_id !== req.user.id) return res.status(403).json({ error: 'No autorizado' });
     if (!['borrador', 'rechazado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'Esta legalización ya fue enviada. Solicita autorización de modificación para editarla.' });
+      return res.status(409).json({ error: 'Esta legalización ya fue enviada. Solicita autorización de modificación para editarla.' });
     }
     if (leg.expenses.length === 0) return res.status(400).json({ error: 'Agrega al menos un gasto' });
 
-    // El presidente no requiere autorización: sus legalizaciones quedan aprobadas al enviarlas
+    // El presidente no requiere autorización: sus legalizaciones quedan aprobadas al
+    // enviarlas. La actualización es condicional al estado actual (evita doble envío).
     if (req.user.rol === ROLES.PRESIDENTE) {
-      await leg.update({ estado: 'aprobado', aprobado_por: req.user.id });
+      const [n] = await db.ExpenseLegalization.update(
+        { estado: 'aprobado', aprobado_por: req.user.id },
+        { where: { id: leg.id, estado: ['borrador', 'rechazado'] } }
+      );
+      if (n === 0) return res.status(409).json({ error: 'Esta legalización ya fue enviada' });
       if (leg.travel_request_id) {
         await db.TravelRequest.update({ estado: 'legalizado' }, { where: { id: leg.travel_request_id } });
       }
+      await leg.reload();
       return res.json(leg);
     }
 
-    await leg.update({ estado: 'enviado' });
+    const [n] = await db.ExpenseLegalization.update(
+      { estado: 'enviado' },
+      { where: { id: leg.id, estado: ['borrador', 'rechazado'] } }
+    );
+    if (n === 0) return res.status(409).json({ error: 'Esta legalización ya fue enviada' });
+    await leg.reload();
 
     // Update travel request status if linked
     if (leg.travel_request_id) {
@@ -257,7 +292,7 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     });
     if (!leg) return res.status(404).json({ error: 'No encontrada' });
     if (!['enviado', 'revisado'].includes(leg.estado)) {
-      return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar legalizaciones enviadas o en revisión' });
+      return res.status(409).json({ error: 'Solo se pueden aprobar o rechazar legalizaciones enviadas o en revisión' });
     }
     // Nadie aprueba sus propias solicitudes
     if (leg.user_id === req.user.id) {
@@ -270,16 +305,23 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     }
 
     const { action, comentarios } = req.body;
+    if (!['aprobar', 'rechazar'].includes(action)) {
+      return res.status(400).json({ error: 'Acción no válida: usa "aprobar" o "rechazar"' });
+    }
     if (action === 'rechazar' && !comentarios?.trim()) {
       return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
     }
 
     const nuevoEstado = action === 'aprobar' ? 'aprobado' : 'rechazado';
 
-    await leg.update({
+    // Condicional al estado actual: si dos aprobadores deciden a la vez,
+    // solo la primera decisión gana.
+    const [n] = await db.ExpenseLegalization.update({
       estado: nuevoEstado,
       [action === 'aprobar' ? 'aprobado_por' : 'revisado_por']: req.user.id,
-    });
+    }, { where: { id: leg.id, estado: ['enviado', 'revisado'] } });
+    if (n === 0) return res.status(409).json({ error: 'Esta legalización ya fue decidida por otro aprobador' });
+    await leg.reload();
 
     await db.Approval.create({
       tipo: 'legalizacion',

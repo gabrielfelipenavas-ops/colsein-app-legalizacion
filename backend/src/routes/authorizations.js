@@ -132,7 +132,7 @@ router.post('/:id/decide', auth, requireRole(...AUTORIZADORES_ESPECIALES), async
     });
     if (!solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
     if (solicitud.estado !== 'pendiente') {
-      return res.status(400).json({ error: 'Esta solicitud ya fue resuelta' });
+      return res.status(409).json({ error: 'Esta solicitud ya fue resuelta' });
     }
 
     // Nadie autoriza sus propias solicitudes
@@ -146,11 +146,20 @@ router.post('/:id/decide', auth, requireRole(...AUTORIZADORES_ESPECIALES), async
     }
 
     const { action, comentarios } = req.body;
+    if (!['autorizar', 'rechazar'].includes(action)) {
+      return res.status(400).json({ error: 'Acción no válida: usa "autorizar" o "rechazar"' });
+    }
     if (action === 'rechazar' && !comentarios?.trim()) {
       return res.status(400).json({ error: 'Para rechazar incluye un comentario con el motivo' });
     }
     const nuevoEstado = action === 'autorizar' ? 'autorizado' : 'rechazado';
-    await solicitud.update({ estado: nuevoEstado, autorizado_por: req.user.id, comentarios: comentarios || null });
+    // Condicional al estado actual: evita que dos autorizadores decidan a la vez
+    const [n] = await db.AuthRequest.update(
+      { estado: nuevoEstado, autorizado_por: req.user.id, comentarios: comentarios || null },
+      { where: { id: solicitud.id, estado: 'pendiente' } }
+    );
+    if (n === 0) return res.status(409).json({ error: 'Esta solicitud ya fue resuelta por otro autorizador' });
+    await solicitud.reload();
 
     // Si se autorizó una modificación, desbloquear la legalización (vuelve a borrador)
     if (nuevoEstado === 'autorizado') await desbloquearLegalizacion(solicitud);

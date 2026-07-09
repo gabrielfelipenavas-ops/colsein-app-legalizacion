@@ -4,6 +4,7 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
+const { parseFecha, hoyBogota } = require('../utils/dates');
 
 // GET /api/anticipos
 router.get('/', auth, async (req, res) => {
@@ -70,21 +71,23 @@ router.post('/', auth, [
       if (val < 0) return res.status(400).json({ error: `El valor de ${campo.replace('_dia', '')} no puede ser negativo` });
     }
 
-    const d1 = new Date(fecha_ida), d2 = new Date(fecha_regreso);
+    // Fechas parseadas sin corrimiento de zona horaria
+    const d1 = parseFecha(fecha_ida), d2 = parseFecha(fecha_regreso);
+    if (!d1 || !d2) return res.status(400).json({ error: 'Las fechas del viaje no son válidas (usa el formato AAAA-MM-DD)' });
     if (d2 < d1) return res.status(400).json({ error: 'La fecha de regreso no puede ser anterior a la de ida' });
     const duracion = Math.max(1, Math.ceil((d2 - d1) / 86400000) + 1);
 
-    // Generar consecutivo del mes/año actual (incluye el año para no repetirse entre años)
-    const ahora = new Date();
-    const mes = ahora.getMonth();
-    const anio = ahora.getFullYear();
+    // Generar consecutivo del mes/año actual EN HORA DE COLOMBIA (incluye el
+    // año para no repetirse entre años)
+    const hb = hoyBogota();
+    const mes = hb.mes - 1;
+    const anio = hb.anio;
     const meses = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
     const inicioMes = new Date(anio, mes, 1);
     const inicioMesSiguiente = new Date(anio, mes + 1, 1);
     const count = await db.TravelRequest.count({
       where: { created_at: { [db.Sequelize.Op.gte]: inicioMes, [db.Sequelize.Op.lt]: inicioMesSiguiente } },
     });
-    const consecutivo = `${meses[mes]}${anio}-${String(count + 1).padStart(3, '0')}`;
 
     const presupuesto_total = (valores.alojamiento_dia + valores.alimentacion_dia + valores.transportes_dia + valores.imprevistos_dia + valores.representacion_dia) * duracion;
     const anticipo_total = (valores.alimentacion_dia + valores.transportes_dia) * duracion;
@@ -92,22 +95,34 @@ router.post('/', auth, [
     // El presidente no requiere autorización: su anticipo queda aprobado al crearlo
     const esPresidente = req.user.rol === ROLES.PRESIDENTE;
 
-    const request = await db.TravelRequest.create({
-      user_id: req.user.id, consecutivo, destino_tipo: destino_tipo || 'NACIONAL',
-      motivo, proceso, ciudad_destino, fecha_ida, fecha_regreso,
-      duracion_dias: duracion,
-      alojamiento_dia: alojamiento_dia || 0,
-      alimentacion_dia: alimentacion_dia || 0,
-      transportes_dia: transportes_dia || 0,
-      imprevistos_dia: imprevistos_dia || 0,
-      representacion_dia: representacion_dia || 0,
-      presupuesto_total, anticipo_total,
-      estado: esPresidente ? 'aprobado' : 'enviado',
-      aprobado_por: esPresidente ? req.user.id : null,
-      fecha_aprobacion: esPresidente ? new Date() : null,
-      acepta_terminos: acepta_terminos || false,
-      fecha_solicitud: new Date().toISOString().split('T')[0],
-    });
+    // Si dos solicitudes llegan a la vez pueden calcular el mismo consecutivo:
+    // el índice UNIQUE de la BD lo detecta y aquí se reintenta con el siguiente.
+    let request;
+    for (let intento = 0; ; intento++) {
+      const consecutivo = `${meses[mes]}${anio}-${String(count + 1 + intento).padStart(3, '0')}`;
+      try {
+        request = await db.TravelRequest.create({
+          user_id: req.user.id, consecutivo, destino_tipo: destino_tipo || 'NACIONAL',
+          motivo, proceso, ciudad_destino, fecha_ida, fecha_regreso,
+          duracion_dias: duracion,
+          alojamiento_dia: alojamiento_dia || 0,
+          alimentacion_dia: alimentacion_dia || 0,
+          transportes_dia: transportes_dia || 0,
+          imprevistos_dia: imprevistos_dia || 0,
+          representacion_dia: representacion_dia || 0,
+          presupuesto_total, anticipo_total,
+          estado: esPresidente ? 'aprobado' : 'enviado',
+          aprobado_por: esPresidente ? req.user.id : null,
+          fecha_aprobacion: esPresidente ? new Date() : null,
+          acepta_terminos: acepta_terminos || false,
+          fecha_solicitud: hb.fecha,
+        });
+        break;
+      } catch (err) {
+        if (err.name === 'SequelizeUniqueConstraintError' && intento < 5) continue;
+        throw err;
+      }
+    }
 
     const total = parseFloat(anticipo_total).toLocaleString('es-CO');
     notifyRoles(aprobadoresDe(req.user.rol), {
@@ -133,7 +148,7 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     });
     if (!request) return res.status(404).json({ error: 'No encontrado' });
     if (request.estado !== 'enviado') {
-      return res.status(400).json({ error: 'Solo se pueden aprobar o rechazar anticipos en estado "enviado"' });
+      return res.status(409).json({ error: 'Solo se pueden aprobar o rechazar anticipos en estado "enviado"' });
     }
 
     // Nadie aprueba sus propias solicitudes
@@ -146,18 +161,24 @@ router.post('/:id/approve', auth, requireRole(...APROBADORES), async (req, res) 
     }
 
     const { action, comentarios } = req.body;
+    if (!['aprobar', 'rechazar'].includes(action)) {
+      return res.status(400).json({ error: 'Acción no válida: usa "aprobar" o "rechazar"' });
+    }
     if (action === 'rechazar' && !comentarios?.trim()) {
       return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
     }
 
     const nuevoEstado = action === 'aprobar' ? 'aprobado' : 'rechazado';
 
-    await request.update({
+    // Condicional al estado actual: evita doble aprobación simultánea
+    const [n] = await db.TravelRequest.update({
       estado: nuevoEstado,
       aprobado_por: req.user.id,
       fecha_aprobacion: new Date(),
       observaciones: comentarios || null,
-    });
+    }, { where: { id: request.id, estado: 'enviado' } });
+    if (n === 0) return res.status(409).json({ error: 'Este anticipo ya fue decidido por otro aprobador' });
+    await request.reload();
 
     await db.Approval.create({
       tipo: 'anticipo', referencia_id: request.id,
