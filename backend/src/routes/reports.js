@@ -1,11 +1,11 @@
 const router = require('express').Router();
 const db = require('../models');
 const { Op } = require('sequelize');
-const { auth } = require('../middleware/auth');
+const { auth, requireRole } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
 
 // Roles que pueden descargar documentos de otros empleados
-const { VISORES } = require('../roles');
+const { VISORES, ADMIN_SISTEMA } = require('../roles');
 const archiver = require('archiver');
 const path = require('path');
 const fs = require('fs');
@@ -179,8 +179,10 @@ router.get('/dashboard', auth, async (req, res) => {
   }
 });
 
-// GET /api/reports/diagnose-images — check expense image storage status
-router.get('/diagnose-images', auth, async (req, res) => {
+// GET /api/reports/diagnose-images — check expense image storage status.
+// Herramienta de diagnóstico: expone rutas del servidor (cwd, rutas absolutas),
+// por eso se restringe a roles administrativos y nunca a un usuario comercial.
+router.get('/diagnose-images', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
   try {
     const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const resolvedDir = path.resolve(uploadDir);

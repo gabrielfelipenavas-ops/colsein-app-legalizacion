@@ -70,7 +70,7 @@ Vendedor envía → Líder Regional revisa → Gerente Ventas aprueba → Contro
 - GET/POST /api/kilometraje/entries — CRUD registros diarios
 - POST /api/kilometraje/entries/:id/upload/:field — Subir foto soporte
 - POST /api/kilometraje/reports/:id/submit — Enviar reporte
-- POST /api/expenses/ocr — OCR con Claude Vision API
+- POST /api/expenses/ocr — OCR local con Tesseract.js (imagen preprocesada con sharp)
 - GET /api/reports/kilometraje/:id/excel — Descargar Excel formato oficial
 
 ## Usuarios de prueba
