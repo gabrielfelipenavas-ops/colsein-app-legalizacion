@@ -18,6 +18,16 @@ router.get('/', auth, async (req, res) => {
 // PUT /api/config/:clave
 router.put('/:clave', auth, requireRole(...ADMIN_SISTEMA), async (req, res) => {
   try {
+    if (req.body.valor === undefined || req.body.valor === null || String(req.body.valor).trim() === '') {
+      return res.status(400).json({ error: 'El valor de la configuración es obligatorio' });
+    }
+    // Las tarifas de kilometraje deben ser números positivos
+    if (/^tarifa_/.test(req.params.clave)) {
+      const n = parseFloat(req.body.valor);
+      if (Number.isNaN(n) || n <= 0) {
+        return res.status(400).json({ error: 'La tarifa debe ser un número mayor a cero' });
+      }
+    }
     const [config] = await db.SystemConfig.findOrCreate({
       where: { clave: req.params.clave },
       defaults: { clave: req.params.clave, valor: req.body.valor, descripcion: req.body.descripcion },
