@@ -137,6 +137,9 @@ router.get('/search', auth, async (req, res) => {
 router.get('/attachment/:uid/:filename', auth, async (req, res) => {
   try {
     const { uid, filename } = req.params;
+    // El UID de IMAP es numérico; cualquier otra cosa se rechaza (evita
+    // inyectar criterios de búsqueda IMAP arbitrarios).
+    if (!/^\d+$/.test(String(uid))) return res.status(400).json({ error: 'Identificador de mensaje no válido' });
     const connection = await imaps.connect(getImapConfig());
     await connection.openBox('INBOX');
 
@@ -156,8 +159,16 @@ router.get('/attachment/:uid/:filename', auth, async (req, res) => {
 
     if (!attachment) return res.status(404).json({ error: 'Adjunto no encontrado' });
 
-    res.setHeader('Content-Type', attachment.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // Nombre saneado en la cabecera (sin comillas ni saltos que rompan/inyecten
+    // la cabecera) y tipo de contenido de una lista segura.
+    const safeName = String(filename).replace(/[^a-zA-Z0-9 ._-]/g, '_').slice(0, 120) || 'adjunto';
+    const TIPOS_SEGUROS = ['application/pdf', 'application/xml', 'text/xml', 'application/zip'];
+    const contentType = TIPOS_SEGUROS.includes(String(attachment.contentType || '').toLowerCase())
+      ? attachment.contentType
+      : 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.send(attachment.content);
   } catch (err) {
     console.error('Attachment error:', err);
@@ -314,10 +325,11 @@ router.get('/matches', auth, async (req, res) => {
 
     // Filter by expense date month/year if provided
     if (month && year) {
+      const { periodoDe } = require('../utils/dates');
       matches = matches.filter(m => {
         if (!m.Expense?.fecha) return false;
-        const d = new Date(m.Expense.fecha);
-        return (d.getMonth() + 1) === parseInt(month) && d.getFullYear() === parseInt(year);
+        const p = periodoDe(m.Expense.fecha);
+        return p && p.mes === parseInt(month) && p.anio === parseInt(year);
       });
     }
 
@@ -337,6 +349,9 @@ router.post('/save-match', auth, async (req, res) => {
 
     if (!expense_id || !email_uid) {
       return res.status(400).json({ error: 'expense_id y email_uid son requeridos' });
+    }
+    if (!/^\d+$/.test(String(email_uid))) {
+      return res.status(400).json({ error: 'Identificador de mensaje no válido' });
     }
 
     // Verify expense belongs to user

@@ -20,18 +20,36 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/clients
+// Campos de cliente que se aceptan del cuerpo de la petición (lista blanca:
+// evita fijar id/created_at u otros campos internos por asignación masiva)
+const CAMPOS_CLIENTE = ['nombre', 'nit', 'direccion', 'ciudad', 'departamento', 'zona', 'latitud', 'longitud', 'contacto_nombre', 'contacto_telefono', 'activo'];
+function buildClientData(body) {
+  const data = {};
+  for (const k of CAMPOS_CLIENTE) {
+    if (body[k] !== undefined) data[k] = body[k];
+  }
+  return data;
+}
+
+// POST /api/clients — cualquier usuario autenticado puede crear un cliente
+// (los vendedores registran clientes nuevos desde el registro de kilometraje)
 router.post('/', auth, async (req, res) => {
   try {
-    const client = await db.Client.create(req.body);
+    const data = buildClientData(req.body);
+    if (!data.nombre || !String(data.nombre).trim()) {
+      return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
+    }
+    const client = await db.Client.create(data);
     res.status(201).json(client);
   } catch (err) {
+    console.error('Crear cliente error:', err);
     res.status(500).json({ error: 'Error al crear cliente' });
   }
 });
 
-// POST /api/clients/import — Bulk import from Excel/CSV (NetSuite format)
-router.post('/import', auth, uploadFile.single('archivo'), async (req, res) => {
+// POST /api/clients/import — Bulk import from Excel/CSV (NetSuite format).
+// Solo roles con gestión de clientes (la importación masiva puede alterar todo el catálogo).
+router.post('/import', auth, requireRole('lider_regional', 'gerente_ventas', 'gerente_general', 'administrador'), uploadFile.single('archivo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
 
@@ -141,11 +159,11 @@ router.post('/import', auth, uploadFile.single('archivo'), async (req, res) => {
 });
 
 // PUT /api/clients/:id
-router.put('/:id', auth, requireRole('lider_regional', 'gerente_ventas', 'administrador'), async (req, res) => {
+router.put('/:id', auth, requireRole('lider_regional', 'gerente_ventas', 'gerente_general', 'administrador'), async (req, res) => {
   try {
     const client = await db.Client.findByPk(req.params.id);
     if (!client) return res.status(404).json({ error: 'No encontrado' });
-    await client.update(req.body);
+    await client.update(buildClientData(req.body));
     res.json(client);
   } catch (err) {
     res.status(500).json({ error: 'Error' });

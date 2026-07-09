@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { generateFlat } = require('../services/netsuiteFlat');
+const { periodoDe } = require('../utils/dates');
 
 // Roles que acceden al módulo de contabilidad
 const CONTABLES = ['contabilidad', 'administrador', 'gerente_general', 'presidente'];
@@ -24,8 +25,8 @@ async function legalizacionesDelMes(year, month, soloAprobadas = true) {
   return legs
     .map((l) => {
       const expensesMes = (l.expenses || []).filter((e) => {
-        const d = new Date(e.fecha);
-        return d.getMonth() + 1 === month && d.getFullYear() === year;
+        const p = periodoDe(e.fecha);
+        return p && p.mes === month && p.anio === year;
       });
       return { leg: l, expensesMes };
     })
