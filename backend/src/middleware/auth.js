@@ -8,7 +8,9 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ error: 'Token requerido' });
     }
     const token = header.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Algoritmo fijado: evita ataques de confusión de algoritmo si algún día
+    // se cambia el esquema de firma.
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await db.User.findByPk(decoded.id, { attributes: { exclude: ['password_hash'] } });
     if (!user || !user.activo) return res.status(401).json({ error: 'Usuario no válido' });
     req.user = user;

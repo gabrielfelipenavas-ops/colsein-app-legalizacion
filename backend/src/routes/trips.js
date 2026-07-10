@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth } = require('../middleware/auth');
 const { estimateRoute } = require('../services/distance');
+const { periodoDe, hoyBogota } = require('../utils/dates');
 
 // Tarifas vigentes (config en BD, con respaldo por env y por defecto)
 async function getTarifas() {
@@ -60,8 +61,8 @@ router.get('/', auth, async (req, res) => {
     if (req.query.mes && req.query.anio) {
       const mes = parseInt(req.query.mes), anio = parseInt(req.query.anio);
       list = reqs.filter((t) => {
-        const d = new Date(t.fecha);
-        return d.getMonth() + 1 === mes && d.getFullYear() === anio;
+        const p = periodoDe(t.fecha);
+        return p && p.mes === mes && p.anio === anio;
       });
     }
     res.json(list);
@@ -80,7 +81,8 @@ router.post('/', auth, async (req, res) => {
 
     const trip = await db.Trip.create({
       user_id: req.user.id,
-      fecha: fecha || new Date().toISOString().split('T')[0],
+      // La fecha por defecto es "hoy en Colombia" (el servidor puede estar en UTC)
+      fecha: fecha || hoyBogota().fecha,
       medio: medio === 'MOTO' ? 'MOTO' : 'CARRO',
       estado: 'en_curso',
       puntos: [p],
@@ -173,15 +175,17 @@ router.post('/:id/confirm', auth, async (req, res) => {
     }
     totalConfirmado = Math.round(totalConfirmado * 100) / 100;
 
-    // Reporte del mes (se crea si no existe)
-    const d = new Date(trip.fecha);
-    const mes = d.getMonth() + 1, anio = d.getFullYear();
+    // Reporte del mes (se crea si no existe). Periodo calculado sin corrimiento UTC.
+    const { mes, anio } = periodoDe(trip.fecha) || {};
+    if (!mes) return res.status(400).json({ error: 'La fecha del recorrido no es válida' });
     const [report] = await db.KilometrageReport.findOrCreate({
       where: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio },
       defaults: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio, estado: 'borrador' },
     });
-    if (report.estado === 'aprobado') {
-      return res.status(400).json({ error: 'El reporte de ese mes ya está aprobado y no se puede modificar' });
+    // El reporte enviado/en revisión/aprobado está bloqueado (mismo control que
+    // el registro manual de kilometraje)
+    if (['enviado', 'revisado', 'aprobado'].includes(report.estado)) {
+      return res.status(409).json({ error: 'El reporte de ese mes ya fue enviado y está bloqueado. No se le pueden agregar recorridos.' });
     }
 
     const { carro, moto } = await getTarifas();
@@ -195,46 +199,56 @@ router.post('/:id/confirm', auth, async (req, res) => {
       ? legs.map((l) => (sumLegs > 0 ? (parseFloat(l.km || 0) / sumLegs) * totalConfirmado : totalConfirmado / numLegs))
       : Array.from({ length: numLegs }, () => totalConfirmado / numLegs);
 
-    // Crear una entrada por tramo (destino = a dónde llegó)
-    let acumulado = 0;
-    const creadas = [];
-    for (let i = 1; i < puntos.length; i++) {
-      const desde = puntos[i - 1];
-      const hasta = puntos[i];
-      let km = Math.round((repartido[i - 1] || 0) * 10) / 10;
-      // Ajuste de redondeo en el último tramo para que el total cuadre exacto
-      if (i === puntos.length - 1) km = Math.round((totalConfirmado - acumulado) * 10) / 10;
-      acumulado += km;
-      const valorKm = Math.round(km * tarifa * 100) / 100;
-      const nombre = hasta.tipo === 'regreso' ? 'Regreso' : (hasta.label || 'Visita');
-      // Estimado GPS del tramo (lo que el aprobador podrá comparar contra lo confirmado)
-      const estLeg = legs[i - 1] ? Math.round(parseFloat(legs[i - 1].km || 0) * 10) / 10 : km;
+    // Todo dentro de una transacción: primero se "reclama" el recorrido con una
+    // actualización condicional (si dos confirmaciones llegan a la vez, solo una
+    // gana y no se duplican las entradas de kilometraje).
+    const creadas = await db.sequelize.transaction(async (t) => {
+      const [claimed] = await db.Trip.update(
+        { estado: 'confirmado', total_km_confirmado: totalConfirmado, report_id: report.id },
+        { where: { id: trip.id, estado: ['en_curso', 'finalizado'] }, transaction: t }
+      );
+      if (claimed === 0) return null;
 
-      const entry = await db.KilometrageEntry.create({
-        report_id: report.id,
-        user_id: req.user.id,
-        fecha: trip.fecha,
-        cliente_nombre: nombre,
-        medio: trip.medio,
-        km_inicial: 0,
-        km_final: 0,
-        total_km: km,          // lo que el usuario confirmó (cuenta para el reembolso)
-        valor_km: valorKm,
-        peajes: 0, parqueaderos: 0, taxis: 0, otros: 0,
-        origen_lat: desde.lat, origen_lng: desde.lng,
-        destino_lat: hasta.lat, destino_lng: hasta.lng,
-        distancia_api: estLeg, // estimado GPS (para comparar)
-      });
-      creadas.push(entry.id);
-    }
+      // Crear una entrada por tramo (destino = a dónde llegó)
+      let acumulado = 0;
+      const ids = [];
+      for (let i = 1; i < puntos.length; i++) {
+        const desde = puntos[i - 1];
+        const hasta = puntos[i];
+        let km = Math.round((repartido[i - 1] || 0) * 10) / 10;
+        // Ajuste de redondeo en el último tramo para que el total cuadre exacto
+        if (i === puntos.length - 1) km = Math.round((totalConfirmado - acumulado) * 10) / 10;
+        acumulado += km;
+        const valorKm = Math.round(km * tarifa * 100) / 100;
+        const nombre = hasta.tipo === 'regreso' ? 'Regreso' : (hasta.label || 'Visita');
+        // Estimado GPS del tramo (lo que el aprobador podrá comparar contra lo confirmado)
+        const estLeg = legs[i - 1] ? Math.round(parseFloat(legs[i - 1].km || 0) * 10) / 10 : km;
 
-    // Recalcular totales del reporte
-    await recalcReport(report.id);
+        const entry = await db.KilometrageEntry.create({
+          report_id: report.id,
+          user_id: req.user.id,
+          fecha: trip.fecha,
+          cliente_nombre: nombre,
+          medio: trip.medio,
+          km_inicial: 0,
+          km_final: 0,
+          total_km: km,          // lo que el usuario confirmó (cuenta para el reembolso)
+          valor_km: valorKm,
+          peajes: 0, parqueaderos: 0, taxis: 0, otros: 0,
+          origen_lat: desde.lat, origen_lng: desde.lng,
+          destino_lat: hasta.lat, destino_lng: hasta.lng,
+          distancia_api: estLeg, // estimado GPS (para comparar)
+        }, { transaction: t });
+        ids.push(entry.id);
+      }
 
-    trip.estado = 'confirmado';
-    trip.total_km_confirmado = totalConfirmado;
-    trip.report_id = report.id;
-    await trip.save();
+      // Recalcular totales del reporte
+      await recalcReport(report.id, t);
+      return ids;
+    });
+
+    if (!creadas) return res.status(409).json({ error: 'Este recorrido ya fue confirmado' });
+    await trip.reload();
 
     res.json({ trip, report_id: report.id, entries_creadas: creadas.length });
   } catch (err) {
@@ -268,8 +282,8 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // Recalcula los totales de un reporte sumando sus entradas
-async function recalcReport(reportId) {
-  const entries = await db.KilometrageEntry.findAll({ where: { report_id: reportId } });
+async function recalcReport(reportId, transaction = null) {
+  const entries = await db.KilometrageEntry.findAll({ where: { report_id: reportId }, transaction });
   const totals = entries.reduce((acc, e) => ({
     total_km: acc.total_km + parseFloat(e.total_km || 0),
     total_valor_km: acc.total_valor_km + parseFloat(e.valor_km || 0),
@@ -279,7 +293,7 @@ async function recalcReport(reportId) {
     total_otros: acc.total_otros + parseFloat(e.otros || 0),
   }), { total_km: 0, total_valor_km: 0, total_peajes: 0, total_parqueaderos: 0, total_taxis: 0, total_otros: 0 });
   totals.valor_total = totals.total_valor_km + totals.total_peajes + totals.total_parqueaderos + totals.total_taxis + totals.total_otros;
-  await db.KilometrageReport.update(totals, { where: { id: reportId } });
+  await db.KilometrageReport.update(totals, { where: { id: reportId }, transaction });
 }
 
 module.exports = router;

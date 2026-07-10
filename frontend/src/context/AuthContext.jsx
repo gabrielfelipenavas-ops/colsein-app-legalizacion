@@ -27,6 +27,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    // Limpia la cookie de acceso a archivos en el servidor (mejor esfuerzo)
+    authAPI.logout().catch(() => {});
     sessionStorage.removeItem('colsein_token');
     sessionStorage.removeItem('colsein_user');
     setUser(null);

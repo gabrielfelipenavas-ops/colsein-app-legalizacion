@@ -38,7 +38,7 @@ app.use(helmet({
 // CORS: en producción solo se permite el origen configurado (FRONTEND_URL). Si no se
 // configura, no se habilita CORS cruzado (la app se sirve desde el mismo origen).
 app.use(cors({ origin: process.env.FRONTEND_URL || (isProd ? false : 'http://localhost:5173'), credentials: true }));
-app.use(morgan('dev'));
+if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
@@ -91,6 +91,30 @@ if (isProd && !process.env.UPLOAD_DIR) {
 } else {
   console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)}`);
 }
+// Los soportes subidos exigen sesión: el token puede venir en el header
+// Authorization (peticiones del API) o en la cookie httpOnly 'colsein_files'
+// que se emite en el login (para las etiquetas <img> del navegador).
+const jwt = require('jsonwebtoken');
+function tokenDePeticion(req) {
+  const h = req.headers.authorization;
+  if (h && h.startsWith('Bearer ')) return h.slice(7);
+  const cookies = req.headers.cookie;
+  if (cookies) {
+    const m = cookies.match(/(?:^|;\s*)colsein_files=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
+}
+app.use('/uploads', (req, res, next) => {
+  try {
+    const token = tokenDePeticion(req);
+    if (!token) return res.status(401).json({ error: 'Autenticación requerida para ver este archivo' });
+    jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Sesión inválida o expirada' });
+  }
+});
 app.use('/uploads', express.static(path.resolve(uploadDir), {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -181,4 +205,7 @@ async function start() {
   }
 }
 
-start();
+// En las pruebas (supertest) se importa la app sin abrir el puerto
+if (require.main === module) start();
+
+module.exports = app;

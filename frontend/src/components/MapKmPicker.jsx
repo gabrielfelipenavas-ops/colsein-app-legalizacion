@@ -4,10 +4,12 @@ import 'leaflet/dist/leaflet.css';
 import { X, MapPin, Undo2, Check, Navigation } from 'lucide-react';
 import { tripAPI } from '../services/api';
 import { fmtNum } from '../utils/helpers';
+import useModalA11y from '../utils/useModalA11y';
 
 // Selector de ruta en el mapa: el usuario toca origen → destino (y paradas
 // intermedias si quiere) y se estima el kilometraje aproximado (gratis).
 export default function MapKmPicker({ onClose, onPick }) {
+  const modalRef = useModalA11y(onClose);
   const elRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
@@ -77,10 +79,10 @@ export default function MapKmPicker({ onClose, onPick }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[400] flex items-end justify-center" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[94vh] overflow-auto p-4 pb-8">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Estimar kilómetros en el mapa" className="bg-white rounded-t-[20px] w-full max-w-[480px] max-h-[94vh] overflow-auto p-4 pb-8">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-extrabold flex items-center gap-2"><Navigation size={18} className="text-colsein-500" /> Estimar km en el mapa</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><X size={18} /></button>
         </div>
         <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">Toca en el mapa el <strong>origen</strong>, luego el <strong>destino</strong> (y paradas intermedias si las hubo). La <strong>ruta por las calles</strong> y los km se calculan solos.</p>
 

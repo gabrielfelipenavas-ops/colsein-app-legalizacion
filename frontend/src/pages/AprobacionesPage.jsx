@@ -3,6 +3,7 @@ import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as Imag
 import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import useModalA11y from '../utils/useModalA11y';
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -20,8 +21,9 @@ function ImageThumb({ src, alt }) {
         <img src={url} alt={alt} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
       </button>
       {open && (
-        <div className="fixed inset-0 z-[999] bg-black/90 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
-          <button onClick={() => setOpen(false)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center"><X size={20} /></button>
+        <div className="fixed inset-0 z-[999] bg-black/90 flex items-center justify-center p-4" onClick={() => setOpen(false)}
+          onKeyDown={e => e.key === 'Escape' && setOpen(false)} role="dialog" aria-modal="true" aria-label={alt || 'Soporte'}>
+          <button autoFocus onClick={() => setOpen(false)} aria-label="Cerrar imagen" className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center"><X size={20} /></button>
           <img src={url} alt={alt} className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
         </div>
       )}
@@ -60,6 +62,7 @@ function ApprovalActions({ onApprove, onReject, disabled }) {
             value={comentarios}
             onChange={e => setComentarios(e.target.value)}
             placeholder="Explica por qué no se autoriza..."
+            aria-label="Motivo del rechazo"
             rows={3}
             className="w-full border border-red-200 rounded-lg p-2 text-sm bg-white"
           />
@@ -70,6 +73,7 @@ function ApprovalActions({ onApprove, onReject, disabled }) {
           value={comentarios}
           onChange={e => setComentarios(e.target.value)}
           placeholder="Comentario opcional..."
+          aria-label="Comentario opcional"
           rows={2}
           className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white"
         />
@@ -363,13 +367,14 @@ function Row({ k, v }) {
 }
 
 function Modal({ title, children, onClose }) {
+  const modalRef = useModalA11y(onClose);
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[80]" onClick={onClose} />
-      <div className="fixed inset-0 z-[90] bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[92vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[90] bg-white flex flex-col sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:max-h-[92vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden">
         <div className="shrink-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between">
           <h3 className="text-sm font-bold">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 p-1"><X size={22} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="text-slate-400 p-1"><X size={22} /></button>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">{children}</div>
       </div>
@@ -458,13 +463,17 @@ export default function AprobacionesPage() {
     }
   };
 
+  const [decidiendoId, setDecidiendoId] = useState(null);
   const decidirAutorizacion = async (id, action, comentarios) => {
+    if (decidiendoId) return;
+    setDecidiendoId(id);
     try {
       await authorizationAPI.decide(id, action, comentarios);
       await load();
     } catch (err) {
       alert(err.response?.data?.error || 'Error al procesar la autorización');
     }
+    setDecidiendoId(null);
   };
 
   const counts = {
@@ -608,9 +617,9 @@ export default function AprobacionesPage() {
                         className="flex-1 py-2 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
                         <XCircle size={14} /> Rechazar
                       </button>
-                      <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')}
-                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1">
-                        <CheckCircle size={14} /> Autorizar
+                      <button onClick={() => decidirAutorizacion(sol.id, 'autorizar', '')} disabled={decidiendoId === sol.id}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center gap-1 disabled:opacity-50">
+                        <CheckCircle size={14} /> {decidiendoId === sol.id ? 'Procesando…' : 'Autorizar'}
                       </button>
                     </div>
                   ) : (

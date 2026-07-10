@@ -1,10 +1,16 @@
 const router = require('express').Router();
 const { body, param, query } = require('express-validator');
+const path = require('path');
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
+const { periodoDe, validarFechaGasto } = require('../utils/dates');
+
+// Estados en los que el reporte está bloqueado para el usuario (ya en el flujo
+// de aprobación). Solo en 'borrador' o 'rechazado' se puede modificar/enviar.
+const ESTADOS_BLOQUEADOS = ['enviado', 'revisado', 'aprobado'];
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -54,9 +60,11 @@ router.post('/entries', auth, [
   try {
     const { fecha, cliente_nombre, client_id, medio, km_inicial, km_final, peajes, parqueaderos, taxis, taxi_tipo, taxi_origen, taxi_destino, otros, origen_lat, origen_lng, destino_lat, destino_lng, distancia_api } = req.body;
 
-    const d = new Date(fecha);
-    const mes = d.getMonth() + 1;
-    const anio = d.getFullYear();
+    const fechaError = validarFechaGasto(fecha);
+    if (fechaError) return res.status(400).json({ error: fechaError });
+
+    // Periodo del registro calculado sin corrimiento de zona horaria
+    const { mes, anio } = periodoDe(fecha);
 
     // Find or create the monthly report
     let [report] = await db.KilometrageReport.findOrCreate({
@@ -64,8 +72,10 @@ router.post('/entries', auth, [
       defaults: { user_id: req.user.id, periodo_mes: mes, periodo_anio: anio, estado: 'borrador' },
     });
 
-    if (report.estado === 'aprobado') {
-      return res.status(400).json({ error: 'No se puede modificar un reporte aprobado' });
+    // Un reporte enviado/en revisión/aprobado está bloqueado: no se le pueden
+    // agregar registros (el bloqueo se hace cumplir en el servidor, no solo en la UI)
+    if (ESTADOS_BLOQUEADOS.includes(report.estado)) {
+      return res.status(409).json({ error: 'El reporte de ese mes ya fue enviado y está bloqueado. No se pueden agregar registros.' });
     }
 
     // Get tariff
@@ -126,7 +136,9 @@ router.put('/entries/:id', auth, async (req, res) => {
     if (!entry) return res.status(404).json({ error: 'Registro no encontrado' });
 
     const report = await db.KilometrageReport.findByPk(entry.report_id);
-    if (report.estado === 'aprobado') return res.status(400).json({ error: 'Reporte ya aprobado' });
+    if (ESTADOS_BLOQUEADOS.includes(report.estado)) {
+      return res.status(409).json({ error: 'El reporte ya fue enviado y está bloqueado. No se pueden modificar sus registros.' });
+    }
 
     const tarifaCarro = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || '600.65');
     const tarifaMoto = parseFloat((await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || '507.03');
@@ -175,6 +187,10 @@ router.delete('/entries/:id', auth, async (req, res) => {
   try {
     const entry = await db.KilometrageEntry.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!entry) return res.status(404).json({ error: 'No encontrado' });
+    const report = await db.KilometrageReport.findByPk(entry.report_id);
+    if (report && ESTADOS_BLOQUEADOS.includes(report.estado)) {
+      return res.status(409).json({ error: 'El reporte ya fue enviado y está bloqueado. No se pueden eliminar sus registros.' });
+    }
     const reportId = entry.report_id;
     await entry.destroy();
     await recalculateReport(reportId);
@@ -190,11 +206,21 @@ router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (re
     const entry = await db.KilometrageEntry.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!entry) return res.status(404).json({ error: 'No encontrado' });
 
+    const report = await db.KilometrageReport.findByPk(entry.report_id);
+    if (report && ESTADOS_BLOQUEADOS.includes(report.estado)) {
+      return res.status(409).json({ error: 'El reporte ya fue enviado y está bloqueado. No se pueden cambiar sus soportes.' });
+    }
+
     const field = req.params.field; // peaje_foto, parqueadero_foto, taxi_foto, otros_foto
     const allowed = ['peaje_foto', 'parqueadero_foto', 'taxi_foto', 'otros_foto'];
     if (!allowed.includes(field)) return res.status(400).json({ error: 'Campo no válido' });
+    if (!req.file) return res.status(400).json({ error: 'No se recibió la foto. Adjunta el archivo e intenta de nuevo.' });
 
-    const filePath = `/uploads/${req.file.filename}`;
+    // La URL se calcula relativa al directorio de subidas (los archivos se
+    // guardan en subcarpetas por mes; usar solo el nombre dejaba la URL rota).
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
+    const filePath = `/uploads/${rel}`;
     await entry.update({ [field]: filePath });
 
     res.json({ url: filePath });
@@ -208,23 +234,50 @@ router.post('/reports/:id/submit', auth, async (req, res) => {
   try {
     const report = await db.KilometrageReport.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!report) return res.status(404).json({ error: 'No encontrado' });
-    if (report.estado !== 'borrador') return res.status(400).json({ error: 'Solo se puede enviar un reporte en borrador' });
+    // Se puede enviar desde borrador o tras un rechazo (corregir y reenviar)
+    if (!['borrador', 'rechazado'].includes(report.estado)) {
+      return res.status(409).json({ error: 'Este reporte ya fue enviado. Solo se puede enviar un reporte en borrador o rechazado.' });
+    }
 
-    // Validate all entries have required photos
+    // Validate all entries have required photos and taxi data.
+    // Regla de taxis (espejo del frontend): tipo, origen y destino son
+    // obligatorios siempre; la factura/soporte es obligatoria para apps
+    // (Uber/InDriver/DiDi/…), no para taxi convencional o transporte público.
+    const APPS_TAXI_CON_FACTURA = ['Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify'];
     const entries = await db.KilometrageEntry.findAll({ where: { report_id: report.id } });
     for (const e of entries) {
       if (parseFloat(e.peajes) > 0 && !e.peaje_foto) return res.status(400).json({ error: `Falta foto de peaje para ${e.cliente_nombre} (${e.fecha})` });
       if (parseFloat(e.parqueaderos) > 0 && !e.parqueadero_foto) return res.status(400).json({ error: `Falta foto de parqueadero para ${e.cliente_nombre} (${e.fecha})` });
-      if (parseFloat(e.taxis) > 0 && !e.taxi_foto) return res.status(400).json({ error: `Falta foto de taxi para ${e.cliente_nombre} (${e.fecha})` });
+      if (parseFloat(e.taxis) > 0) {
+        if (!e.taxi_tipo || !e.taxi_origen || !e.taxi_destino) {
+          return res.status(400).json({ error: `Falta tipo, origen o destino del taxi para ${e.cliente_nombre} (${e.fecha})` });
+        }
+        if (APPS_TAXI_CON_FACTURA.includes(e.taxi_tipo) && !e.taxi_foto) {
+          return res.status(400).json({ error: `Falta la factura/soporte del taxi por app para ${e.cliente_nombre} (${e.fecha})` });
+        }
+      }
+      if (parseFloat(e.otros) > 0 && !e.otros_foto) return res.status(400).json({ error: `Falta foto del soporte de "otros" para ${e.cliente_nombre} (${e.fecha})` });
     }
 
-    // El presidente no requiere autorización: su reporte queda aprobado al enviarlo
+    // El presidente no requiere autorización: su reporte queda aprobado al enviarlo.
+    // La actualización es condicional al estado actual para evitar dobles envíos
+    // simultáneos (condición de carrera por doble clic).
     if (req.user.rol === ROLES.PRESIDENTE) {
-      await report.update({ estado: 'aprobado', fecha_envio: new Date(), aprobado_por: req.user.id, fecha_aprobacion: new Date() });
+      const [n] = await db.KilometrageReport.update(
+        { estado: 'aprobado', fecha_envio: new Date(), aprobado_por: req.user.id, fecha_aprobacion: new Date() },
+        { where: { id: report.id, estado: ['borrador', 'rechazado'] } }
+      );
+      if (n === 0) return res.status(409).json({ error: 'El reporte ya fue enviado' });
+      await report.reload();
       return res.json(report);
     }
 
-    await report.update({ estado: 'enviado', fecha_envio: new Date() });
+    const [n] = await db.KilometrageReport.update(
+      { estado: 'enviado', fecha_envio: new Date() },
+      { where: { id: report.id, estado: ['borrador', 'rechazado'] } }
+    );
+    if (n === 0) return res.status(409).json({ error: 'El reporte ya fue enviado' });
+    await report.reload();
 
     // Destinatarios según jerarquía: gerentes → presidente; desarrollador AVEVA →
     // gerente AVEVA; admin → gerencia general/presidencia; el flujo normal pasa
@@ -260,6 +313,12 @@ router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (re
     });
     if (!report) return res.status(404).json({ error: 'No encontrado' });
 
+    // Solo se puede decidir sobre reportes en el flujo de aprobación. Sin esta
+    // validación se podía "aprobar" un borrador nunca enviado o re-decidir un
+    // reporte ya aprobado/rechazado.
+    if (!['enviado', 'revisado'].includes(report.estado)) {
+      return res.status(409).json({ error: 'Solo se pueden aprobar o rechazar reportes enviados o en revisión' });
+    }
     // Nadie aprueba sus propias solicitudes
     if (report.user_id === req.user.id) {
       return res.status(403).json({ error: 'No puedes aprobar tu propio reporte de kilometraje' });
@@ -270,6 +329,9 @@ router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (re
     }
 
     const { action, comentarios } = req.body; // action: 'aprobar' | 'rechazar'
+    if (!['aprobar', 'rechazar'].includes(action)) {
+      return res.status(400).json({ error: 'Acción no válida: usa "aprobar" o "rechazar"' });
+    }
     if (action === 'rechazar' && !comentarios?.trim()) {
       return res.status(400).json({ error: 'Para rechazar debes incluir un comentario explicando el motivo' });
     }
@@ -288,7 +350,13 @@ router.post('/reports/:id/approve', auth, requireRole(...APROBADORES), async (re
     }
     if (comentarios) updateData.observaciones = comentarios;
 
-    await report.update(updateData);
+    // Actualización condicional al estado actual: si dos aprobadores deciden a la
+    // vez, solo la primera decisión gana (evita doble aprobación simultánea).
+    const [n] = await db.KilometrageReport.update(updateData, {
+      where: { id: report.id, estado: ['enviado', 'revisado'] },
+    });
+    if (n === 0) return res.status(409).json({ error: 'Este reporte ya fue decidido por otro aprobador' });
+    await report.reload();
     await db.Approval.create({
       tipo: 'kilometraje', referencia_id: report.id,
       aprobador_id: req.user.id, rol_aprobador: req.user.rol,

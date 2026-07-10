@@ -3,6 +3,7 @@ const db = require('../models');
 const { Op } = require('sequelize');
 const { auth } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
+const { periodoDe, hoyBogota } = require('../utils/dates');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES } = require('../roles');
@@ -137,9 +138,8 @@ router.get('/anticipo/:id/excel', auth, async (req, res) => {
 router.get('/dashboard', auth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const now = new Date();
-    const mes = now.getMonth() + 1;
-    const anio = now.getFullYear();
+    // Periodo actual según la hora de Colombia (el servidor puede estar en UTC)
+    const { mes, anio } = hoyBogota();
 
     const currentReport = await db.KilometrageReport.findOne({
       where: { user_id: userId, periodo_mes: mes, periodo_anio: anio },
@@ -202,7 +202,6 @@ router.get('/diagnose-images', auth, async (req, res) => {
         fecha: e.fecha,
         establecimiento: e.establecimiento,
         imagen_url: e.imagen_url,
-        resolvedPath: imgPath,
         fileExists: exists,
       };
     });
@@ -210,11 +209,9 @@ router.get('/diagnose-images', auth, async (req, res) => {
     const totalWithUrl = results.filter(r => r.imagen_url).length;
     const totalExisting = results.filter(r => r.fileExists).length;
 
+    // No se exponen rutas absolutas del servidor (divulgación de información)
     res.json({
-      uploadDir,
-      resolvedDir,
       dirExists,
-      cwd: process.cwd(),
       summary: { total: expenses.length, withImageUrl: totalWithUrl, filesFound: totalExisting },
       expenses: results,
     });
@@ -277,8 +274,8 @@ router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
     // Filter legalizations that have expenses in the target month
     for (const leg of legalizations) {
       const hasExpensesInMonth = leg.expenses.some(e => {
-        const d = new Date(e.fecha);
-        return d.getMonth() + 1 === month && d.getFullYear() === year;
+        const p = periodoDe(e.fecha);
+        return p && p.mes === month && p.anio === year;
       });
       if (!hasExpensesInMonth) continue;
 
@@ -295,8 +292,8 @@ router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
 
     const monthMatches = emailMatches.filter(m => {
       if (!m.Expense?.fecha) return false;
-      const d = new Date(m.Expense.fecha);
-      return (d.getMonth() + 1) === month && d.getFullYear() === year;
+      const p = periodoDe(m.Expense.fecha);
+      return p && p.mes === month && p.anio === year;
     });
 
     for (const match of monthMatches) {

@@ -13,7 +13,9 @@ const MEDIOS_PAGO_VALIDOS = ['efectivo', 'tarjeta_debito', 'tarjeta_credito'];
 function toMoney(v) {
   if (v === undefined || v === null || v === '') return null;
   const n = parseFloat(String(v).replace(',', '.'));
-  if (Number.isNaN(n)) return null;
+  // Los valores negativos se rechazan (un IVA/propina negativa permitiría
+  // inflar el valor legalizable calculado en el servidor).
+  if (Number.isNaN(n) || n < 0) return null;
   return n;
 }
 
@@ -65,6 +67,15 @@ function computeLegalizable({ valor, iva = 0, impoconsumo = 0, servicio = 0, pro
   const servicioComputable = Math.min(_serv, base * 0.10);     // tope 10%
   const legalizable = base + _iva + _impo + servicioComputable;
   return Math.round(legalizable * 100) / 100;
+}
+
+// Un gasto asociado a una legalización ya enviada/en revisión/aprobada está
+// bloqueado: editarlo o borrarlo alteraría una legalización que el flujo de
+// aprobación considera cerrada (el bloqueo debe cumplirse en el backend).
+async function legalizacionBloqueada(expense) {
+  if (!expense.legalization_id) return false;
+  const leg = await db.ExpenseLegalization.findByPk(expense.legalization_id, { attributes: ['id', 'estado'] });
+  return !!leg && ['enviado', 'revisado', 'aprobado'].includes(leg.estado);
 }
 
 // Guarda/actualiza el establecimiento en el catálogo compartido para autocompletar.
@@ -172,8 +183,21 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
   }
 });
 
+// El OCR es costoso en CPU (Tesseract): límite propio por usuario para que un
+// solo usuario (o un token abusado) no pueda saturar el servidor.
+const rateLimit = require('express-rate-limit');
+const ocrLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  keyGenerator: (req) => 'user:' + (req.user?.id || req.ip),
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { error: 'Has hecho demasiadas lecturas de recibos seguidas. Espera unos minutos e intenta de nuevo.' },
+});
+
 // POST /api/expenses/ocr — process receipt with Tesseract.js (free, local OCR)
-router.post('/ocr', auth, upload.single('imagen'), async (req, res) => {
+router.post('/ocr', auth, ocrLimiter, upload.single('imagen'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Imagen requerida' });
 
@@ -339,6 +363,9 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (await legalizacionBloqueada(expense)) {
+      return res.status(409).json({ error: 'Este gasto pertenece a una legalización ya enviada y no se puede modificar. Solicita autorización de modificación.' });
+    }
 
     const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
       'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
@@ -349,6 +376,11 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
           ? (toMoney(req.body[k]) || 0)
           : req.body[k];
       }
+    }
+
+    // Si se está cambiando el valor, debe seguir siendo mayor a cero
+    if (updates.valor !== undefined && !(updates.valor > 0)) {
+      return res.status(400).json({ error: 'El valor del gasto debe ser mayor a cero' });
     }
 
     // Si se está cambiando la fecha, validar que sea razonable (ni futura ni muy antigua)
@@ -386,6 +418,9 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (await legalizacionBloqueada(expense)) {
+      return res.status(409).json({ error: 'Este gasto pertenece a una legalización ya enviada y no se puede eliminar. Solicita autorización de modificación.' });
+    }
     await expense.destroy();
     res.json({ message: 'Eliminado' });
   } catch (err) {

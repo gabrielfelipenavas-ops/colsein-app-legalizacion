@@ -21,7 +21,22 @@ router.post('/login', [
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Credenciales incorrectas' });
 
-    const token = jwt.sign({ id: user.id, rol: user.rol }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+    const token = jwt.sign({ id: user.id, rol: user.rol }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      algorithm: 'HS256',
+    });
+
+    // Cookie httpOnly SOLO para /uploads: permite que las etiquetas <img> del
+    // navegador (que no pueden mandar el header Authorization) accedan a los
+    // soportes subidos sin dejar el directorio /uploads público.
+    const decoded = jwt.decode(token);
+    res.cookie('colsein_files', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/uploads',
+      maxAge: Math.max(0, (decoded?.exp || 0) * 1000 - Date.now()),
+    });
 
     const { password_hash, ...userData } = user.toJSON();
     res.json({ token, user: userData });
@@ -29,6 +44,12 @@ router.post('/login', [
     console.error('Login error:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
+});
+
+// POST /api/auth/logout — limpia la cookie de acceso a archivos
+router.post('/logout', (req, res) => {
+  res.clearCookie('colsein_files', { path: '/uploads' });
+  res.json({ ok: true });
 });
 
 // GET /api/auth/me

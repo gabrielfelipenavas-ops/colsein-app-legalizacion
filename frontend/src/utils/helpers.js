@@ -6,6 +6,14 @@ export const fmt = (n) =>
 
 export const fmtNum = (n) => new Intl.NumberFormat('es-CO').format(n);
 
+// Fecha de HOY en hora local del dispositivo ('YYYY-MM-DD').
+// (new Date().toISOString() usa UTC: a las 8 p. m. en Colombia ya devuelve el
+// día siguiente, y el registro caía en la fecha equivocada.)
+export const hoyLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 // Parseo defensivo de fechas: acepta Date, ISO ('2026-07-03' o con hora) y
 // devuelve null si el valor es ausente o inválido (nunca un Date inválido).
 export const parseDateSafe = (d) => {

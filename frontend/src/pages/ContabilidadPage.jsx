@@ -24,6 +24,15 @@ export default function ContabilidadPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [audit, setAudit] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [descargando, setDescargando] = useState(null);
+
+  // Descarga con indicador de progreso (los ZIP de facturas pueden tardar)
+  const descargarConEstado = async (clave, promise, filename) => {
+    if (descargando) return;
+    setDescargando(clave);
+    await descargarBlob(promise, filename);
+    setDescargando(null);
+  };
   const [downloading, setDownloading] = useState(false);
   const [mappings, setMappings] = useState([]);
   const [showMap, setShowMap] = useState(false);
@@ -124,13 +133,13 @@ export default function ContabilidadPage() {
               <div key={m.id} className="border border-slate-200 rounded-xl p-2.5">
                 <p className="text-xs font-bold text-slate-700 mb-1.5">{CAT_LABELS[m.categoria] || m.categoria}</p>
                 <div className="grid grid-cols-2 gap-1.5">
-                  <input value={m.cuenta || ''} onChange={e => setMapField(m.id, 'cuenta', e.target.value)} placeholder="Cuenta" className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-                  <input value={m.cuenta_id || ''} onChange={e => setMapField(m.id, 'cuenta_id', e.target.value)} placeholder="ID cuenta" className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
+                  <input value={m.cuenta || ''} onChange={e => setMapField(m.id, 'cuenta', e.target.value)} placeholder="Cuenta" aria-label={`Cuenta para ${CAT_LABELS[m.categoria] || m.categoria}`} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
+                  <input value={m.cuenta_id || ''} onChange={e => setMapField(m.id, 'cuenta_id', e.target.value)} placeholder="ID cuenta" aria-label={`ID de cuenta para ${CAT_LABELS[m.categoria] || m.categoria}`} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
                   <select value={m.concepto_tributario || 'COMPRAS'} onChange={e => setMapField(m.id, 'concepto_tributario', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
                     <option value="COMPRAS">COMPRAS</option>
                     <option value="SERVICIOS">SERVICIOS</option>
                   </select>
-                  <input value={m.codigo_iva || ''} onChange={e => setMapField(m.id, 'codigo_iva', e.target.value)} placeholder="Código IVA" className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
+                  <input value={m.codigo_iva || ''} onChange={e => setMapField(m.id, 'codigo_iva', e.target.value)} placeholder="Código IVA" aria-label={`Código de IVA para ${CAT_LABELS[m.categoria] || m.categoria}`} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
                 <button onClick={() => saveMap(m)} disabled={savingId === m.id} className="mt-1.5 text-[11px] font-bold text-teal-600 flex items-center gap-1">
                   <Save size={11} /> {savingId === m.id ? 'Guardando...' : 'Guardar'}
@@ -154,13 +163,13 @@ export default function ContabilidadPage() {
               <span className="text-[10px] text-slate-400">{l.usuario} · {l.zona}</span>
             </div>
             <div className="flex gap-2 mb-2">
-              <button onClick={() => descargarBlob(reportAPI.downloadLegalizacionExcel(l.id), `Legalizacion_${l.id}.xlsx`)}
-                className="flex-1 py-1.5 rounded-lg border border-colsein-300 text-colsein-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-colsein-50">
-                <Download size={11} /> Excel
+              <button onClick={() => descargarConEstado(`excel-${l.id}`, reportAPI.downloadLegalizacionExcel(l.id), `Legalizacion_${l.id}.xlsx`)} disabled={!!descargando}
+                className="flex-1 py-1.5 rounded-lg border border-colsein-300 text-colsein-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-colsein-50 disabled:opacity-50">
+                <Download size={11} /> {descargando === `excel-${l.id}` ? 'Generando…' : 'Excel'}
               </button>
-              <button onClick={() => descargarBlob(reportAPI.downloadLegalizacionFacturas(l.id), `Facturas_Legalizacion_${l.id}.zip`)}
-                className="flex-1 py-1.5 rounded-lg border border-emerald-300 text-emerald-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-emerald-50">
-                <Download size={11} /> Facturas
+              <button onClick={() => descargarConEstado(`zip-${l.id}`, reportAPI.downloadLegalizacionFacturas(l.id), `Facturas_Legalizacion_${l.id}.zip`)} disabled={!!descargando}
+                className="flex-1 py-1.5 rounded-lg border border-emerald-300 text-emerald-600 text-[11px] font-bold flex items-center justify-center gap-1 hover:bg-emerald-50 disabled:opacity-50">
+                <Download size={11} /> {descargando === `zip-${l.id}` ? 'Generando…' : 'Facturas'}
               </button>
             </div>
             <div className="space-y-1">
