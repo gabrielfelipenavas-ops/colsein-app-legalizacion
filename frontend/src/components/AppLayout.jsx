@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 
-const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
+const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente', 'control_interno', 'contabilidad', 'asistente_gerencia'];
 
 const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },
@@ -28,9 +28,10 @@ export default function AppLayout() {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const isApprover = APPROVER_ROLES.includes(user?.rol);
+  // La asistente de gerencia revisa (no aprueba): su pestaña se llama "Revisar".
   const tabs = [
     ...baseTabs,
-    ...(isApprover ? [approverTab] : []),
+    ...(isApprover ? [user?.rol === 'asistente_gerencia' ? { ...approverTab, label: 'Revisar' } : approverTab] : []),
     ...(CONTABLE_ROLES.includes(user?.rol) ? [contabilidadTab] : []),
     ...(ADMIN_ROLES.includes(user?.rol) ? adminTabs : []),
   ];

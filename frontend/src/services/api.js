@@ -113,6 +113,7 @@ export const expenseAPI = {
     return api.post('/expenses/ocr', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
   },
   delete: (id) => api.delete(`/expenses/${id}`),
+  validate: (id, validado, observaciones) => api.put(`/expenses/${id}/validate`, observaciones !== undefined ? { validado, observaciones } : { validado }),
 };
 
 // ── CLIENTS ──
@@ -136,6 +137,7 @@ export const legalizationAPI = {
   updateExpenses: (id, expense_ids) => api.put(`/legalizations/${id}/expenses`, { expense_ids }),
   submit: (id) => api.post(`/legalizations/${id}/submit`),
   approve: (id, action, comentarios) => api.post(`/legalizations/${id}/approve`, { action, comentarios }),
+  review: (id, action, comentarios) => api.post(`/legalizations/${id}/review`, { action, comentarios }),
 };
 
 // ── NOTIFICATIONS ──

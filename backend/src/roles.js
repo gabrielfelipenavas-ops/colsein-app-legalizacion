@@ -19,6 +19,7 @@ const ROLES = {
   PRESIDENTE: 'presidente',
   GERENTE_AVEVA: 'gerente_aveva',
   DESARROLLADOR_AVEVA: 'desarrollador_aveva',
+  ASISTENTE_GERENCIA: 'asistente_gerencia',
 };
 
 // Roles que aprueban/revisan solicitudes (el administrador NO aprueba).
@@ -31,7 +32,14 @@ const GERENTES = [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL, ROLES.GERENTE_AVE
 // Roles que pueden VER/descargar datos de TODOS los empleados (aprobadores +
 // auditoría + administrador). El administrador puede ver y descargar todo
 // (legalizaciones, facturas, archivo plano) aunque NO aprueba solicitudes.
-const VISORES = [...APROBADORES, ROLES.CONTROL_INTERNO, ROLES.CONTABILIDAD, ROLES.ADMIN];
+// La asistente de gerencia REVISA todas las legalizaciones (facturas bien
+// hechas, soportes completos) pero NO da la aprobación final.
+const VISORES = [...APROBADORES, ROLES.CONTROL_INTERNO, ROLES.CONTABILIDAD, ROLES.ADMIN, ROLES.ASISTENTE_GERENCIA];
+
+// Roles que pueden REVISAR legalizaciones (validar facturas y marcar el estado
+// `revisado` o devolverlas): la asistente de gerencia, los gerentes y control
+// interno. El presidente pasa cualquier control de rol (superusuario).
+const REVISORES = [ROLES.ASISTENTE_GERENCIA, ...GERENTES, ROLES.CONTROL_INTERNO];
 
 // Roles que pueden autorizar taxis por app (Uber/InDriver/DiDi) y gastos especiales.
 // (El gerente AVEVA solo decide las solicitudes de sus desarrolladores — ver puedeAprobar.)
@@ -68,4 +76,4 @@ function aprobadoresDe(emisorRol) {
   return [ROLES.GERENTE_VENTAS, ROLES.GERENTE_GENERAL];
 }
 
-module.exports = { ROLES, APROBADORES, GERENTES, VISORES, AUTORIZADORES_ESPECIALES, ADMIN_SISTEMA, puedeAprobar, aprobadoresDe };
+module.exports = { ROLES, APROBADORES, GERENTES, VISORES, REVISORES, AUTORIZADORES_ESPECIALES, ADMIN_SISTEMA, puedeAprobar, aprobadoresDe };

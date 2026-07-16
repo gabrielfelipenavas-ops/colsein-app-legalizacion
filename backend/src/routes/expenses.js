@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const db = require('../models');
-const { auth } = require('../middleware/auth');
+const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const path = require('path');
 const { validarFechaGasto } = require('../utils/dates');
+const { ROLES, REVISORES } = require('../roles');
 
 const CATEGORIAS_VALIDAS = ['alojamiento', 'alimentacion', 'transportes', 'imprevistos', 'representacion', 'peaje', 'parqueadero', 'taxi', 'otro'];
 const MEDIOS_PAGO_VALIDOS = ['efectivo', 'tarjeta_debito', 'tarjeta_credito'];
@@ -378,6 +379,30 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
   } catch (err) {
     console.error('Update expense error:', err);
     res.status(500).json({ error: 'Error al actualizar gasto' });
+  }
+});
+
+// PUT /api/expenses/:id/validate — la asistente de gerencia (o gerentes /
+// control interno / contabilidad) marca una factura como validada (bien hecha)
+// o le deja una observación. NO modifica montos ni datos del gasto.
+router.put('/:id/validate', auth, requireRole(...REVISORES, ROLES.CONTABILIDAD), async (req, res) => {
+  try {
+    const expense = await db.Expense.findByPk(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'No encontrado' });
+
+    const { validado, observaciones } = req.body;
+    const updates = {};
+    if (validado !== undefined) updates.validado = !!validado;
+    if (observaciones !== undefined) updates.observaciones = observaciones;
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Nada que actualizar: envía "validado" y/u "observaciones"' });
+    }
+
+    await expense.update(updates);
+    res.json(expense);
+  } catch (err) {
+    console.error('Validate expense error:', err);
+    res.status(500).json({ error: 'Error al validar la factura' });
   }
 });
 

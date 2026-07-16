@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
-const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
+const { ROLES, GERENTES, VISORES, APROBADORES, REVISORES, puedeAprobar, aprobadoresDe } = require('../roles');
 
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
@@ -233,8 +233,9 @@ router.post('/:id/submit', auth, async (req, res) => {
     }
 
     // Notificar a quien corresponde según la jerarquía (gerentes → presidente, etc.)
+    // y a la asistente de gerencia, que revisa TODAS las legalizaciones enviadas.
     const total = parseFloat(leg.gasto_real_total || 0).toLocaleString('es-CO');
-    notifyRoles(aprobadoresDe(leg.User?.rol), {
+    notifyRoles([...aprobadoresDe(leg.User?.rol), ROLES.ASISTENTE_GERENCIA], {
       tipo: 'enviado',
       titulo: 'Nueva legalización pendiente de aprobación',
       mensaje: `${leg.User?.nombre || 'Un usuario'} envió la Legalización #${leg.id} por COP $${total} con ${leg.expenses.length} gasto(s).`,
@@ -246,6 +247,79 @@ router.post('/:id/submit', auth, async (req, res) => {
   } catch (err) {
     console.error('Submit legalization error:', err);
     res.status(500).json({ error: 'Error al enviar' });
+  }
+});
+
+// POST /api/legalizations/:id/review — la asistente de gerencia (o un gerente /
+// control interno) revisa la legalización: la marca `revisado` (facturas bien
+// hechas) o la devuelve como `rechazado` con comentario. NO es la aprobación
+// final: esa sigue siendo de gerencia/presidencia vía /approve.
+router.post('/:id/review', auth, requireRole(...REVISORES), async (req, res) => {
+  try {
+    const leg = await db.ExpenseLegalization.findByPk(req.params.id, {
+      include: [{ model: db.Expense, as: 'expenses' }, { model: db.User, attributes: ['nombre', 'rol'] }],
+    });
+    if (!leg) return res.status(404).json({ error: 'No encontrada' });
+    if (!['enviado', 'revisado'].includes(leg.estado)) {
+      return res.status(400).json({ error: 'Solo se pueden revisar legalizaciones enviadas o en revisión' });
+    }
+    // Nadie revisa sus propias solicitudes
+    if (leg.user_id === req.user.id) {
+      return res.status(403).json({ error: 'No puedes revisar tu propia legalización' });
+    }
+
+    const { action, comentarios } = req.body;
+    if (!['revisar', 'rechazar'].includes(action)) {
+      return res.status(400).json({ error: 'Acción inválida: usa "revisar" o "rechazar"' });
+    }
+    if (action === 'rechazar' && !comentarios?.trim()) {
+      return res.status(400).json({ error: 'Para devolver una legalización debes incluir un comentario explicando el motivo' });
+    }
+
+    // Validación suave: avisa cuántas facturas quedan sin validar, pero no bloquea.
+    const sinValidar = (leg.expenses || []).filter((e) => !e.validado).length;
+
+    const nuevoEstado = action === 'revisar' ? 'revisado' : 'rechazado';
+    await leg.update({ estado: nuevoEstado, revisado_por: req.user.id });
+
+    await db.Approval.create({
+      tipo: 'legalizacion',
+      referencia_id: leg.id,
+      aprobador_id: req.user.id,
+      rol_aprobador: req.user.rol,
+      estado: action === 'revisar' ? 'revisado' : 'rechazado',
+      comentarios,
+    });
+
+    // Notificar al colaborador que envió la legalización
+    notify({
+      user_id: leg.user_id,
+      tipo: action === 'revisar' ? 'info' : 'rechazado',
+      titulo: action === 'revisar' ? 'Legalización revisada' : 'Legalización devuelta',
+      mensaje: action === 'revisar'
+        ? `Tu Legalización #${leg.id} fue revisada por ${req.user.nombre} y pasa a aprobación.`
+        : `Tu Legalización #${leg.id} fue devuelta por ${req.user.nombre}. Revisa los comentarios y vuelve a enviarla.`,
+      ref_tipo: 'legalizacion',
+      ref_id: leg.id,
+      comentarios,
+    }).catch(() => {});
+
+    // Si quedó revisada, avisar a los aprobadores de que ya pueden dar la aprobación final
+    if (action === 'revisar') {
+      const total = parseFloat(leg.gasto_real_total || 0).toLocaleString('es-CO');
+      notifyRoles(aprobadoresDe(leg.User?.rol), {
+        tipo: 'info',
+        titulo: 'Legalización revisada, lista para aprobar',
+        mensaje: `La Legalización #${leg.id} de ${leg.User?.nombre || 'un usuario'} (COP $${total}) fue revisada por ${req.user.nombre} y espera aprobación final.`,
+        ref_tipo: 'legalizacion',
+        ref_id: leg.id,
+      }).catch(() => {});
+    }
+
+    res.json({ ...leg.toJSON(), facturas_sin_validar: sinValidar });
+  } catch (err) {
+    console.error('Review legalization error:', err);
+    res.status(500).json({ error: 'Error al revisar la legalización' });
   }
 });
 
