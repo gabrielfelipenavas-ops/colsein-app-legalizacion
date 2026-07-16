@@ -33,6 +33,13 @@ export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   me: () => api.get('/auth/me'),
   changePassword: (current_password, new_password) => api.put('/auth/password', { current_password, new_password }),
+  // Firma manuscrita: dibujada en canvas (dataUrl PNG) o subida como archivo
+  saveFirmaDataUrl: (dataUrl) => api.post('/auth/firma', { dataUrl }),
+  uploadFirma: (file) => {
+    const fd = new FormData();
+    fd.append('firma', file);
+    return api.post('/auth/firma', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
 };
 
 // ── KILOMETRAJE ──
@@ -163,6 +170,7 @@ export const reportAPI = {
   dashboard: () => api.get('/reports/dashboard'),
   downloadKmExcel: (reportId) => api.get(`/reports/kilometraje/${reportId}/excel`, { responseType: 'blob' }),
   downloadLegalizacionExcel: (legId) => api.get(`/reports/legalizacion/${legId}/excel`, { responseType: 'blob' }),
+  downloadLegalizacionPdf: (legId) => api.get(`/reports/legalizacion/${legId}/pdf`, { responseType: 'blob' }),
   downloadLegalizacionFacturas: (legId) => api.get(`/reports/legalizacion/${legId}/facturas`, { responseType: 'blob' }),
   downloadAnticipoExcel: (id) => api.get(`/reports/anticipo/${id}/excel`, { responseType: 'blob' }),
   downloadMonthlyPack: (year, month) => api.get(`/reports/monthly-pack/${year}/${month}`, { responseType: 'blob' }),

@@ -3,6 +3,7 @@ const db = require('../models');
 const { Op } = require('sequelize');
 const { auth, requireRole } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
+const { generateLegalizationPdf } = require('../services/pdfGenerator');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES, ADMIN_SISTEMA } = require('../roles');
@@ -68,6 +69,41 @@ router.get('/legalizacion/:id/excel', auth, async (req, res) => {
   } catch (err) {
     console.error('Legalization Excel error:', err);
     res.status(500).json({ error: 'Error al generar Excel' });
+  }
+});
+
+// GET /api/reports/legalizacion/:id/pdf — legalización en PDF con la firma
+// manuscrita del colaborador (registrada en su perfil). Mismo control de
+// acceso que las demás descargas: el dueño o un VISOR (gerencia/auditoría).
+router.get('/legalizacion/:id/pdf', auth, async (req, res) => {
+  try {
+    const leg = await db.ExpenseLegalization.findByPk(req.params.id, {
+      include: [
+        { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona', 'firma_url'] },
+        { model: db.TravelRequest },
+        { model: db.Expense, as: 'expenses' },
+      ],
+    });
+    if (!leg) return res.status(404).json({ error: 'Legalización no encontrada' });
+    if (leg.user_id !== req.user.id && !VISORES.includes(req.user.rol)) {
+      return res.status(403).json({ error: 'No tienes permiso para descargar esta legalización' });
+    }
+
+    // Nombres de quien revisó/aprobó para las líneas de firma del documento
+    const [revisor, aprobador] = await Promise.all([
+      leg.revisado_por ? db.User.findByPk(leg.revisado_por, { attributes: ['nombre'] }) : null,
+      leg.aprobado_por ? db.User.findByPk(leg.aprobado_por, { attributes: ['nombre'] }) : null,
+    ]);
+
+    const filename = `Legalizacion_Gastos_${leg.User.nombre.replace(/\s/g, '_')}_${leg.id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const doc = generateLegalizationPdf(leg, leg.expenses, leg.User, leg.TravelRequest, { revisor, aprobador });
+    doc.pipe(res);
+    doc.end();
+  } catch (err) {
+    console.error('Legalization PDF error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Error al generar el PDF' });
   }
 });
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell, ClipboardCheck, Check } from 'lucide-react';
-import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI } from '../services/api';
+import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell, ClipboardCheck, Check, Download } from 'lucide-react';
+import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 
@@ -339,6 +339,20 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
 
   const pendingCount = expenses.filter(e => !e.validado).length;
 
+  const descargar = async (tipo) => {
+    try {
+      const { data } = tipo === 'pdf'
+        ? await reportAPI.downloadLegalizacionPdf(legalizacion.id)
+        : await reportAPI.downloadLegalizacionExcel(legalizacion.id);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Legalizacion_${legalizacion.id}.${tipo === 'pdf' ? 'pdf' : 'xlsx'}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al descargar'); }
+  };
+
   return (
     <Modal title={`Legalización #${legalizacion.id}`} onClose={onClose}>
       <div className="space-y-3">
@@ -351,6 +365,15 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
               {extra.tipo === 'local' ? 'Local' : 'Viaje'}
             </span>
           </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={() => descargar('pdf')} className="flex-1 py-2 rounded-xl text-[11px] font-bold border border-red-200 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
+            <Download size={13} /> PDF firmado
+          </button>
+          <button onClick={() => descargar('excel')} className="flex-1 py-2 rounded-xl text-[11px] font-bold border border-colsein-200 text-colsein-600 bg-white hover:bg-colsein-50 flex items-center justify-center gap-1">
+            <Download size={13} /> Excel
+          </button>
         </div>
 
         {legalizacion.TravelRequest && (

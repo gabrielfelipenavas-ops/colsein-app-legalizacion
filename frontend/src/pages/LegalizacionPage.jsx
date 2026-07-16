@@ -3,6 +3,7 @@ import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Cal
 import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI, authorizationAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
+import FirmaModal from '../components/FirmaModal';
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -444,6 +445,8 @@ export default function LegalizacionPage() {
   const [legalizations, setLegalizations] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [editingLeg, setEditingLeg] = useState(null);
+  // Registro de firma antes de descargar el PDF (si el usuario aún no la tiene)
+  const [firmaParaPdf, setFirmaParaPdf] = useState(null); // legId pendiente de descargar tras firmar
 
   const load = () => { legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {}); };
   useEffect(load, []);
@@ -504,6 +507,29 @@ export default function LegalizacionPage() {
     } catch { alert('Error al descargar las facturas'); }
   };
 
+  const downloadPdfFile = async (legId) => {
+    try {
+      const { data } = await reportAPI.downloadLegalizacionPdf(legId);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Legalizacion_${legId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al descargar el PDF'); }
+  };
+
+  const downloadPdf = (leg) => {
+    // Si es mi legalización y no tengo firma registrada, ofrecer firmarla primero
+    if (leg.user_id === user?.id && !user?.firma_url) {
+      if (confirm('Aún no has registrado tu firma y el PDF saldría sin firmar. ¿Quieres registrarla ahora?')) {
+        setFirmaParaPdf(leg.id);
+        return;
+      }
+    }
+    downloadPdfFile(leg.id);
+  };
+
   return (
     <>
       <div className="px-4 mb-3">
@@ -555,6 +581,9 @@ export default function LegalizacionPage() {
                       <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">
                         <Download size={11} /> Excel
                       </button>
+                      <button onClick={() => downloadPdf(leg)} className="text-[10px] text-red-600 font-semibold flex items-center gap-1">
+                        <Download size={11} /> PDF
+                      </button>
                       <button onClick={() => downloadFacturas(leg.id)} className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
                         <Download size={11} /> Facturas
                       </button>
@@ -569,6 +598,12 @@ export default function LegalizacionPage() {
 
       {showNew && <NuevaLegalizacionModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
       {editingLeg && <EditarLegalizacionModal legalization={editingLeg} onClose={() => setEditingLeg(null)} onSaved={() => { setEditingLeg(null); load(); }} />}
+      {firmaParaPdf && (
+        <FirmaModal
+          onClose={() => setFirmaParaPdf(null)}
+          onSaved={() => { const id = firmaParaPdf; setFirmaParaPdf(null); downloadPdfFile(id); }}
+        />
+      )}
     </>
   );
 }

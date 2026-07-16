@@ -44,6 +44,9 @@ const User = sequelize.define('User', {
   vehiculo_tipo: { type: Sequelize.ENUM('CARRO', 'MOTO'), defaultValue: 'CARRO' },
   placa: Sequelize.STRING(10),
   telefono: Sequelize.STRING(20),
+  // Firma manuscrita del colaborador (imagen PNG en /uploads/firmas/): se
+  // estampa en el PDF de la legalización para no imprimir/firmar/escanear.
+  firma_url: Sequelize.STRING(500),
   activo: { type: Sequelize.BOOLEAN, defaultValue: true },
 }, { tableName: 'users', underscored: true });
 

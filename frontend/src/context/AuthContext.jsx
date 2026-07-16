@@ -32,8 +32,17 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Actualiza campos del usuario en sesión (ej. firma_url tras guardar la firma)
+  const updateUser = (fields) => {
+    setUser((prev) => {
+      const next = { ...prev, ...fields };
+      sessionStorage.setItem('colsein_user', JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, loading, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );
