@@ -11,8 +11,14 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- Fuentes NO bloqueantes (media=print + swap en arranque.js): si la red del
+         usuario no alcanza Google Fonts, la app pinta igual con la fuente del
+         sistema en vez de quedarse en blanco. -->
+    <link data-fuentes href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" /></noscript>
     <title>COLSEIN — Gestión de Gastos</title>
+    <!-- Archivo externo (no inline) para cumplir la CSP de helmet (script-src 'self') -->
+    <script src="/arranque.js"></script>
   </head>
   <body class="bg-gray-50">
     <div id="root"></div>
