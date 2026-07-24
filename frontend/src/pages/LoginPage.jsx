@@ -77,20 +77,23 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo hint */}
-          <div className="mt-5 p-3 bg-slate-50 rounded-xl border border-slate-200">
-            <p className="text-[11px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">Cuentas de prueba:</p>
-            {[
-              { e: 'esteban.meza@colsein.co', p: 'meza2026', r: 'Comercial' },
-              { e: 'carlos.ramirez@colsein.co', p: 'ramirez2026', r: 'Líder' },
-              { e: 'biviana.baez@colsein.co', p: 'admin2026', r: 'Admin' },
-            ].map((u) => (
-              <button key={u.e} type="button" onClick={() => { setEmail(u.e); setPassword(u.p); }} className="w-full text-left p-2 hover:bg-white rounded-lg transition-colors mb-1 group">
-                <span className="text-xs font-mono text-colsein-600 group-hover:underline">{u.e}</span>
-                <span className="text-[10px] text-slate-400 ml-2">({u.r})</span>
-              </button>
-            ))}
-          </div>
+          {/* Cuentas de prueba: SOLO en desarrollo local. Nunca se muestran en
+              producción para no exponer credenciales reales a cualquier visitante. */}
+          {import.meta.env.DEV && (
+            <div className="mt-5 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-[11px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">Cuentas de prueba (solo desarrollo):</p>
+              {[
+                { e: 'esteban.meza@colsein.co', p: 'meza2026', r: 'Comercial' },
+                { e: 'carlos.ramirez@colsein.co', p: 'ramirez2026', r: 'Líder' },
+                { e: 'biviana.baez@colsein.co', p: 'admin2026', r: 'Admin' },
+              ].map((u) => (
+                <button key={u.e} type="button" onClick={() => { setEmail(u.e); setPassword(u.p); }} className="w-full text-left p-2 hover:bg-white rounded-lg transition-colors mb-1 group">
+                  <span className="text-xs font-mono text-colsein-600 group-hover:underline">{u.e}</span>
+                  <span className="text-[10px] text-slate-400 ml-2">({u.r})</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

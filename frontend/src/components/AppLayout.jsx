@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
-import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, Calculator, LogOut, KeyRound } from 'lucide-react';
+import { Home, Route, Camera, FileText, BarChart3, Users, Shield, CheckSquare, Calculator, LogOut, KeyRound, PenLine } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationsPanel from './NotificationsPanel';
 import ChangePasswordModal from './ChangePasswordModal';
+import FirmaModal from './FirmaModal';
 
-const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente', 'control_interno', 'contabilidad'];
+const APPROVER_ROLES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente', 'control_interno', 'contabilidad', 'asistente_gerencia'];
 
 const baseTabs = [
   { to: '/', icon: Home, label: 'Inicio' },
@@ -25,12 +26,14 @@ const ADMIN_ROLES = ['administrador', 'gerente_general', 'presidente'];
 export default function AppLayout() {
   const { user, logout, isAuthenticated } = useAuth();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showFirma, setShowFirma] = useState(false);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const isApprover = APPROVER_ROLES.includes(user?.rol);
+  // La asistente de gerencia revisa (no aprueba): su pestaña se llama "Revisar".
   const tabs = [
     ...baseTabs,
-    ...(isApprover ? [approverTab] : []),
+    ...(isApprover ? [user?.rol === 'asistente_gerencia' ? { ...approverTab, label: 'Revisar' } : approverTab] : []),
     ...(CONTABLE_ROLES.includes(user?.rol) ? [contabilidadTab] : []),
     ...(ADMIN_ROLES.includes(user?.rol) ? adminTabs : []),
   ];
@@ -46,6 +49,9 @@ export default function AppLayout() {
           </div>
           <div className="flex gap-2 items-center">
             <NotificationsPanel />
+            <button onClick={() => setShowFirma(true)} title="Mi firma" className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+              <PenLine size={16} />
+            </button>
             <button onClick={() => setShowChangePassword(true)} title="Cambiar contraseña" className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
               <KeyRound size={16} />
             </button>
@@ -77,6 +83,7 @@ export default function AppLayout() {
       </nav>
 
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+      {showFirma && <FirmaModal onClose={() => setShowFirma(false)} />}
     </div>
   );
 }

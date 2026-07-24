@@ -8,7 +8,9 @@ const { sendCredentialsEmail } = require('../services/notifications');
 // GET /api/users
 router.get('/', auth, requireRole('lider_regional', 'gerente_ventas', 'control_interno', ...ADMIN_SISTEMA), async (req, res) => {
   try {
-    const users = await db.User.findAll({ attributes: { exclude: ['password_hash'] }, order: [['nombre', 'ASC']] });
+    // firma_url es un dato personal (imagen de la firma manuscrita): no se
+    // expone en el listado de usuarios; solo el dueño la ve vía /auth/me.
+    const users = await db.User.findAll({ attributes: { exclude: ['password_hash', 'firma_url'] }, order: [['nombre', 'ASC']] });
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Error' });

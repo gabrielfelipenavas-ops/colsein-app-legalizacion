@@ -64,13 +64,15 @@ Vendedor envía → Líder Regional revisa → Gerente Ventas aprueba → Contro
 - El presidente no requiere autorización: sus envíos quedan aprobados automáticamente
 - Legalizaciones enviadas quedan bloqueadas; para editarlas el usuario solicita autorización de modificación (tipo `modificacion` en authorization_requests) y un gerente/presidente la aprueba → la legalización vuelve a borrador
 - Al crear un usuario (o restablecer su contraseña) se le envían las credenciales por correo (requiere SMTP en .env); cada usuario cambia su contraseña desde el ícono de llave en la app (PUT /api/auth/password)
+- Rol `asistente_gerencia` (asistente de gerencia): REVISA todas las legalizaciones (valida factura por factura con PUT /api/expenses/:id/validate y marca `revisado` o devuelve con POST /api/legalizations/:id/review) pero NO da la aprobación final; conjunto REVISORES en roles.js
+- Firma manuscrita: cada colaborador registra su firma (ícono de lápiz en la app: dibujada en canvas o imagen subida → POST /api/auth/firma, guardada en UPLOAD_DIR/firmas); se estampa en el PDF de la legalización (GET /api/reports/legalizacion/:id/pdf, generado con pdfkit) para no imprimir/firmar/escanear
 
 ## API principal
 - POST /api/auth/login — { email, password } → { token, user }
 - GET/POST /api/kilometraje/entries — CRUD registros diarios
 - POST /api/kilometraje/entries/:id/upload/:field — Subir foto soporte
 - POST /api/kilometraje/reports/:id/submit — Enviar reporte
-- POST /api/expenses/ocr — OCR con Claude Vision API
+- POST /api/expenses/ocr — OCR local con Tesseract.js (imagen preprocesada con sharp)
 - GET /api/reports/kilometraje/:id/excel — Descargar Excel formato oficial
 
 ## Usuarios de prueba

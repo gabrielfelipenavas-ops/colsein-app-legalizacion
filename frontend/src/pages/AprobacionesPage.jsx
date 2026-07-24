@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell } from 'lucide-react';
-import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI } from '../services/api';
+import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell, ClipboardCheck, Check, Download } from 'lucide-react';
+import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 
@@ -259,10 +259,99 @@ function AnticipoReview({ anticipo, onClose, onAction, canAct }) {
   );
 }
 
-function LegalizacionReview({ legalizacion, onClose, onAction, canAct }) {
+// Acciones del REVISOR (asistente de gerencia / control interno / gerentes):
+// marcar la legalización como revisada o devolverla con comentario.
+function ReviewActions({ onReview, onReturn, pendingCount }) {
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [comentarios, setComentarios] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleReview = async () => {
+    if (pendingCount > 0 && !confirm(`Quedan ${pendingCount} factura(s) sin validar. ¿Marcar la legalización como revisada de todas formas?`)) return;
+    setLoading(true);
+    try { await onReview(comentarios); } finally { setLoading(false); }
+  };
+  const handleReturn = async () => {
+    if (!comentarios.trim()) {
+      alert('Debes incluir un comentario explicando qué debe corregir el colaborador.');
+      return;
+    }
+    setLoading(true);
+    try { await onReturn(comentarios); } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-slate-100 pt-3">
+      <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Revisión de facturas</p>
+      {showReturnForm ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <label className="text-xs font-semibold text-red-700 mb-1 block">Motivo de la devolución (obligatorio)</label>
+          <textarea value={comentarios} onChange={e => setComentarios(e.target.value)} rows={3}
+            placeholder="Explica qué facturas están mal o qué falta corregir..."
+            className="w-full border border-red-200 rounded-lg p-2 text-sm bg-white" />
+        </div>
+      ) : (
+        <textarea value={comentarios} onChange={e => setComentarios(e.target.value)} rows={2}
+          placeholder="Comentario opcional de la revisión..."
+          className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white" />
+      )}
+      <div className="flex gap-2">
+        {showReturnForm ? (
+          <>
+            <button onClick={() => setShowReturnForm(false)} className="btn-outline flex-1 !py-2.5 !text-xs">Cancelar</button>
+            <button onClick={handleReturn} disabled={loading} className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 flex items-center justify-center gap-1">
+              <XCircle size={14} /> {loading ? 'Devolviendo...' : 'Confirmar devolución'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => setShowReturnForm(true)} className="flex-1 py-2.5 rounded-xl text-xs font-bold border border-red-300 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
+              <XCircle size={14} /> Devolver
+            </button>
+            <button onClick={handleReview} disabled={loading} className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-50 flex items-center justify-center gap-1">
+              <ClipboardCheck size={14} /> {loading ? 'Guardando...' : 'Marcar revisada'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview, onReviewAction }) {
   let extra = {};
   try { extra = JSON.parse(legalizacion.observaciones_imprevistos || '{}'); } catch {}
-  const expenses = legalizacion.expenses || [];
+  // Copia local de los gastos para reflejar la validación de facturas al instante
+  const [expenses, setExpenses] = useState(legalizacion.expenses || []);
+  const [validating, setValidating] = useState(null);
+
+  const toggleValidado = async (exp) => {
+    setValidating(exp.id);
+    try {
+      const { data } = await expenseAPI.validate(exp.id, !exp.validado);
+      setExpenses(prev => prev.map(e => (e.id === exp.id ? { ...e, validado: data.validado } : e)));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al validar la factura');
+    } finally {
+      setValidating(null);
+    }
+  };
+
+  const pendingCount = expenses.filter(e => !e.validado).length;
+
+  const descargar = async (tipo) => {
+    try {
+      const { data } = tipo === 'pdf'
+        ? await reportAPI.downloadLegalizacionPdf(legalizacion.id)
+        : await reportAPI.downloadLegalizacionExcel(legalizacion.id);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Legalizacion_${legalizacion.id}.${tipo === 'pdf' ? 'pdf' : 'xlsx'}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Error al descargar'); }
+  };
 
   return (
     <Modal title={`Legalización #${legalizacion.id}`} onClose={onClose}>
@@ -276,6 +365,15 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct }) {
               {extra.tipo === 'local' ? 'Local' : 'Viaje'}
             </span>
           </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={() => descargar('pdf')} className="flex-1 py-2 rounded-xl text-[11px] font-bold border border-red-200 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
+            <Download size={13} /> PDF firmado
+          </button>
+          <button onClick={() => descargar('excel')} className="flex-1 py-2 rounded-xl text-[11px] font-bold border border-colsein-200 text-colsein-600 bg-white hover:bg-colsein-50 flex items-center justify-center gap-1">
+            <Download size={13} /> Excel
+          </button>
         </div>
 
         {legalizacion.TravelRequest && (
@@ -323,31 +421,63 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct }) {
         </div>
 
         <div>
-          <p className="text-xs font-bold mb-2">Gastos ({expenses.length})</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold">Gastos ({expenses.length})</p>
+            {canReview && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${pendingCount === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {pendingCount === 0 ? 'Todas las facturas validadas' : `${pendingCount} sin validar`}
+              </span>
+            )}
+          </div>
           <div className="space-y-2 max-h-[40vh] overflow-auto">
             {expenses.map(exp => (
-              <div key={exp.id} className="border border-slate-200 rounded-xl p-3">
+              <div key={exp.id} className={`border rounded-xl p-3 ${exp.validado ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
                 <div className="flex justify-between mb-1">
-                  <p className="text-xs font-bold capitalize">{exp.categoria}</p>
+                  <p className="text-xs font-bold capitalize flex items-center gap-1">
+                    {exp.categoria}
+                    {exp.validado && <CheckCircle size={12} className="text-emerald-500" />}
+                  </p>
                   <p className="text-sm font-extrabold text-colsein-600">{fmt(parseFloat(exp.valor || 0))}</p>
                 </div>
                 <p className="text-[10px] text-slate-500">{dateStr(exp.fecha)} · {exp.establecimiento || 'Sin establecimiento'}</p>
+                {exp.nit_establecimiento && <p className="text-[10px] text-slate-400">NIT: {exp.nit_establecimiento}</p>}
                 {exp.numero_factura && <p className="text-[10px] text-slate-400">Factura: {exp.numero_factura}</p>}
-                {exp.imagen_url && (
-                  <div className="mt-2">
-                    <ImageThumb src={exp.imagen_url} alt={exp.categoria} />
-                  </div>
-                )}
+                {exp.observaciones && <p className="text-[10px] text-amber-700 mt-0.5">Obs.: {exp.observaciones}</p>}
+                <div className="mt-2 flex items-end justify-between gap-2">
+                  {exp.imagen_url
+                    ? <ImageThumb src={exp.imagen_url} alt={exp.categoria} />
+                    : <span className="text-[10px] text-red-500">Sin soporte adjunto</span>}
+                  {canReview && (
+                    <button onClick={() => toggleValidado(exp)} disabled={validating === exp.id}
+                      className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition-colors disabled:opacity-50 ${exp.validado
+                        ? 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600'
+                        : 'bg-white border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-300'}`}>
+                      <Check size={12} /> {exp.validado ? 'Validada' : 'Validar'}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <ApprovalActions
-          disabled={!canAct}
-          onApprove={(c) => onAction('aprobar', c)}
-          onReject={(c) => onAction('rechazar', c)}
-        />
+        {canReview && (
+          <ReviewActions
+            pendingCount={pendingCount}
+            onReview={(c) => onReviewAction('revisar', c)}
+            onReturn={(c) => onReviewAction('rechazar', c)}
+          />
+        )}
+
+        {/* La aprobación final solo se muestra a quien puede darla; si el usuario
+            es revisor (asistente de gerencia) se ocultan los botones de aprobar. */}
+        {(canAct || !canReview) && (
+          <ApprovalActions
+            disabled={!canAct}
+            onApprove={(c) => onAction('aprobar', c)}
+            onReject={(c) => onAction('rechazar', c)}
+          />
+        )}
       </div>
     </Modal>
   );
@@ -388,6 +518,9 @@ export default function AprobacionesPage() {
 
   const APROBADORES = ['lider_regional', 'gerente_ventas', 'gerente_aveva', 'gerente_general', 'presidente'];
   const GERENTES = ['gerente_ventas', 'gerente_general', 'gerente_aveva'];
+  // Roles que REVISAN legalizaciones (validan facturas y marcan `revisado`):
+  // réplica de REVISORES del backend (roles.js) + presidente (superusuario).
+  const REVISORES = ['asistente_gerencia', ...GERENTES, 'control_interno', 'presidente'];
 
   // Réplica de la regla de jerarquía del backend (roles.js → puedeAprobar)
   const puedeAprobar = (rol, emisor) => {
@@ -416,6 +549,15 @@ export default function AprobacionesPage() {
       return ['enviado', 'revisado'].includes(item.estado);
     }
     return item.estado === 'enviado'; // anticipos
+  };
+
+  // ¿Puede el usuario REVISAR esta legalización (validar facturas, marcar `revisado`)?
+  const canReviewItem = (item) => {
+    if (tab !== 'legalizaciones') return false;
+    if (!REVISORES.includes(user?.rol)) return false;
+    const emisorId = item.user_id ?? item.User?.id;
+    if (emisorId === user?.id) return false; // nadie revisa lo suyo
+    return ['enviado', 'revisado'].includes(item.estado);
   };
 
   // ¿Puede el usuario decidir una solicitud de autorización (taxi / gasto especial / modificación)?
@@ -455,6 +597,17 @@ export default function AprobacionesPage() {
       await load();
     } catch (err) {
       alert(err.response?.data?.error || 'Error al procesar');
+    }
+  };
+
+  const handleReviewAction = async (action, comentarios) => {
+    if (!reviewing) return;
+    try {
+      await legalizationAPI.review(reviewing.data.id, action, comentarios);
+      setReviewing(null);
+      await load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al procesar la revisión');
     }
   };
 
@@ -630,7 +783,8 @@ export default function AprobacionesPage() {
         <AnticipoReview anticipo={reviewing.data} onClose={() => setReviewing(null)} onAction={handleAction} canAct={canApproveItem(reviewing.data)} />
       )}
       {reviewing?.type === 'legalizacion' && (
-        <LegalizacionReview legalizacion={reviewing.data} onClose={() => setReviewing(null)} onAction={handleAction} canAct={canApproveItem(reviewing.data)} />
+        <LegalizacionReview legalizacion={reviewing.data} onClose={() => setReviewing(null)} onAction={handleAction} canAct={canApproveItem(reviewing.data)}
+          canReview={canReviewItem(reviewing.data)} onReviewAction={handleReviewAction} />
       )}
     </>
   );

@@ -38,12 +38,15 @@ const User = sequelize.define('User', {
   cedula: { type: Sequelize.STRING(20), allowNull: false, unique: true },
   email: { type: Sequelize.STRING(100), allowNull: false, unique: true },
   password_hash: { type: Sequelize.STRING(255), allowNull: false },
-  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente', 'gerente_aveva', 'desarrollador_aveva'), defaultValue: 'comercial' },
+  rol: { type: Sequelize.ENUM('comercial', 'lider_regional', 'gerente_ventas', 'control_interno', 'administrador', 'contabilidad', 'gerente_general', 'presidente', 'gerente_aveva', 'desarrollador_aveva', 'asistente_gerencia'), defaultValue: 'comercial' },
   zona: Sequelize.STRING(100),
   lider_regional_id: Sequelize.INTEGER,
   vehiculo_tipo: { type: Sequelize.ENUM('CARRO', 'MOTO'), defaultValue: 'CARRO' },
   placa: Sequelize.STRING(10),
   telefono: Sequelize.STRING(20),
+  // Firma manuscrita del colaborador (imagen PNG en /uploads/firmas/): se
+  // estampa en el PDF de la legalización para no imprimir/firmar/escanear.
+  firma_url: Sequelize.STRING(500),
   activo: { type: Sequelize.BOOLEAN, defaultValue: true },
 }, { tableName: 'users', underscored: true });
 
@@ -211,7 +214,7 @@ const Approval = sequelize.define('Approval', {
   referencia_id: { type: Sequelize.INTEGER, allowNull: false },
   aprobador_id: { type: Sequelize.INTEGER, allowNull: false },
   rol_aprobador: Sequelize.STRING(50),
-  estado: { type: Sequelize.ENUM('aprobado', 'rechazado'), allowNull: false },
+  estado: { type: Sequelize.ENUM('aprobado', 'rechazado', 'revisado'), allowNull: false },
   comentarios: Sequelize.TEXT,
 }, { tableName: 'approvals', underscored: true, updatedAt: false });
 
