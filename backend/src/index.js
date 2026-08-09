@@ -130,16 +130,24 @@ if (isProd || hasFrontendBuild) {
   if (!hasFrontendBuild) {
     console.warn('⚠️  No se encontró frontend/dist/index.html. ¿Se ejecutó el build del frontend?');
   }
-  // Los assets tienen nombre con hash (cache larga); index.html NUNCA se cachea,
-  // así el navegador siempre carga la versión más reciente tras cada despliegue.
+  // Los assets tienen nombre con hash (cache larga); index.html y los archivos
+  // del service worker (sw.js, registerSW.js, manifest) NUNCA se cachean, así
+  // el navegador siempre carga la versión más reciente tras cada despliegue.
+  const NO_CACHE_FILES = ['index.html', 'sw.js', 'registerSW.js', 'manifest.webmanifest', 'arranque.js'];
   app.use(express.static(frontendPath, {
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      if (NO_CACHE_FILES.some(f => filePath.endsWith(f))) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     },
   }));
   // SPA fallback: cualquier ruta que no sea /api ni /uploads devuelve index.html.
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+    // Un archivo que no existe (ej. /assets/index-VIEJO.js de un build anterior
+    // aún referenciado por una caché o service worker desactualizados) debe
+    // responder 404, NUNCA index.html: si se devuelve HTML como si fuera el JS,
+    // el navegador lo rechaza, la caché queda envenenada y la app del usuario
+    // se queda "cargando" para siempre hasta que borre datos manualmente.
+    if (path.extname(req.path)) return res.status(404).json({ error: 'Archivo no encontrado' });
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(frontendPath, 'index.html'));
   });
