@@ -65,6 +65,11 @@ export const TIPOS_TAXI = ['Taxi convencional', 'Uber', 'InDriver', 'DiDi', 'Bea
 export const APPS_TAXI_CON_FACTURA = ['Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify'];
 export const requiereFacturaTaxi = (tipo) => APPS_TAXI_CON_FACTURA.includes(tipo);
 
+// El presidente está en la cúpula de la jerarquía: no requiere autorización de
+// nadie (ver backend/src/roles.js → puedeAprobar / aprobadoresDe), así que para
+// su usuario no se pide ni se envía solicitud de autorización de taxi.
+export const requiereAutorizacionTaxi = (rol) => rol !== 'presidente';
+
 export const PROCESOS = ['Ventas', 'Mercadeo', 'Gestión Integral', 'Administración y Finanzas'];
 
 export const ESTADOS_LABEL = {

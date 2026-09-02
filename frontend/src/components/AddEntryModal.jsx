@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import { X, Car, Bike, Plus, Check, Camera, Trash2, CheckCircle, AlertTriangle, MapPin, Receipt, Building2, DollarSign } from 'lucide-react';
 import { kmAPI, clientAPI, authorizationAPI } from '../services/api';
-import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi } from '../utils/helpers';
+import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi, requiereAutorizacionTaxi } from '../utils/helpers';
+import { useAuth } from '../context/AuthContext';
 import MapKmPicker from './MapKmPicker';
 
 function PhotoUpload({ label, value, onChange, required, colorClass = 'border-emerald-500' }) {
@@ -34,6 +35,11 @@ function PhotoUpload({ label, value, onChange, required, colorClass = 'border-em
 }
 
 export default function AddEntryModal({ onClose, onSaved }) {
+  const { user } = useAuth();
+  // El presidente no requiere autorización de nadie: no se le pide ni se le
+  // envía solicitud al registrar un taxi.
+  const necesitaAutorizacion = requiereAutorizacionTaxi(user?.rol);
+
   const [form, setForm] = useState({
     fecha: new Date().toISOString().split('T')[0], cliente_nombre: '', medio: 'CARRO',
     km_inicial: '', km_final: '', peajes: '', parqueaderos: '', taxis: '',
@@ -156,7 +162,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
       }
       // Los taxis requieren autorización previa: si no se solicitó a mano, la
       // solicitud se envía sola al guardar y queda ligada a este registro.
-      if (taxiVal > 0 && authState !== 'sent') {
+      if (taxiVal > 0 && necesitaAutorizacion && authState !== 'sent') {
         try {
           await enviarAutorizacionTaxi(entry.id);
         } catch {
@@ -272,7 +278,9 @@ export default function AddEntryModal({ onClose, onSaved }) {
           <div className="flex items-center gap-2 mb-2.5">
             <span className="text-base">🚕</span>
             <span className="text-[13px] font-bold">Taxis / Transporte Público</span>
-            <span className="ml-auto text-[9px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">⚠ Autorización previa</span>
+            {necesitaAutorizacion && (
+              <span className="ml-auto text-[9px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">⚠ Autorización previa</span>
+            )}
           </div>
           <div className={taxiVal > 0 ? 'mb-2.5' : ''}><label className="label-field">Valor ($)</label><input type="number" placeholder="0" value={form.taxis} onChange={e => u('taxis', e.target.value)} className="input-field font-mono" /></div>
           {taxiVal > 0 && (
@@ -296,7 +304,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
                 <p className="p-2 bg-violet-100 rounded-lg text-[11px] text-violet-700 font-semibold flex items-center gap-1.5 mb-2.5"><MapPin size={12} /> {form.taxi_origen} → {form.taxi_destino}</p>
               )}
               {/* Solicitar autorización (taxis requieren autorización previa) */}
-              {authState === 'sent' ? (
+              {necesitaAutorizacion && (authState === 'sent' ? (
                 <p className="p-2 bg-emerald-50 rounded-lg text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5 mb-2.5">
                   <CheckCircle size={12} /> {authEstado === 'autorizado'
                     ? 'Autorización registrada automáticamente (no requiere aprobación).'
@@ -307,7 +315,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
                   className="w-full mb-2.5 py-2 rounded-xl border border-violet-300 text-violet-700 bg-white text-[11px] font-bold hover:bg-violet-50 disabled:opacity-50">
                   {authState === 'sending' ? 'Enviando solicitud...' : '🔔 Solicitar autorización ahora (opcional)'}
                 </button>
-              )}
+              ))}
               <PhotoUpload
                 label={requiereFacturaTaxi(form.taxi_tipo) ? '📸 Factura / captura (obligatoria para apps)' : '📸 Soporte (opcional para taxi)'}
                 value={photos.taxi}
@@ -318,7 +326,9 @@ export default function AddEntryModal({ onClose, onSaved }) {
               {requiereFacturaTaxi(form.taxi_tipo)
                 ? <p className="mt-2 p-2 bg-red-50 rounded-lg text-[10px] text-red-700 leading-relaxed"><strong>{form.taxi_tipo}:</strong> requiere factura/soporte obligatorio.</p>
                 : <p className="mt-2 p-2 bg-emerald-50 rounded-lg text-[10px] text-emerald-700 leading-relaxed">El taxi convencional / transporte público no exige factura (soporte opcional).</p>}
-              <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Los taxis/apps requieren autorización previa. Guarda el registro con normalidad: la solicitud de autorización se envía sola y queda pendiente para la legalización.</p>
+              {necesitaAutorizacion
+                ? <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Los taxis/apps requieren autorización previa. Guarda el registro con normalidad: la solicitud de autorización se envía sola y queda pendiente para la legalización.</p>
+                : <p className="mt-2 p-2 bg-emerald-50 rounded-lg text-[10px] text-emerald-700 leading-relaxed"><strong>Nota:</strong> Como presidente no requieres autorización de nadie: guarda el registro y queda listo para la legalización.</p>}
             </>
           )}
         </div>
