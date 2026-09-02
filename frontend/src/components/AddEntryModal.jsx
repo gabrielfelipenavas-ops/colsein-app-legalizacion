@@ -47,19 +47,29 @@ export default function AddEntryModal({ onClose, onSaved }) {
 
   const [creatingClient, setCreatingClient] = useState(false);
   const [authState, setAuthState] = useState('idle'); // idle | sending | sent
+  const [authEstado, setAuthEstado] = useState(null); // pendiente | autorizado (lo decide el backend)
   const [showMap, setShowMap] = useState(false);
+
+  // Envía la solicitud de autorización del taxi. Se usa desde el botón manual y
+  // también de forma automática al guardar el registro (ref_id = id del registro).
+  const enviarAutorizacionTaxi = async (entryId = null) => {
+    const { data } = await authorizationAPI.request({
+      tipo: 'taxi',
+      concepto: `Taxi ${form.taxi_tipo || ''}: ${form.taxi_origen || ''} → ${form.taxi_destino || ''}`.trim(),
+      monto: parseInt(form.taxis) || 0,
+      detalle: `Cliente/visita: ${form.cliente_nombre || '—'}. Fecha: ${form.fecha}.`,
+      ref_tipo: 'kilometraje',
+      ref_id: entryId,
+    });
+    return data;
+  };
 
   const solicitarAutorizacionTaxi = async () => {
     if (authState === 'sending') return;
     setAuthState('sending');
     try {
-      await authorizationAPI.request({
-        tipo: 'taxi',
-        concepto: `Taxi ${form.taxi_tipo || ''}: ${form.taxi_origen || ''} → ${form.taxi_destino || ''}`.trim(),
-        monto: parseInt(form.taxis) || 0,
-        detalle: `Cliente/visita: ${form.cliente_nombre || '—'}. Fecha: ${form.fecha}.`,
-        ref_tipo: 'kilometraje',
-      });
+      const solicitud = await enviarAutorizacionTaxi();
+      setAuthEstado(solicitud?.estado || 'pendiente');
       setAuthState('sent');
     } catch (err) {
       alert(err.response?.data?.error || 'No se pudo enviar la solicitud de autorización');
@@ -112,7 +122,20 @@ export default function AddEntryModal({ onClose, onSaved }) {
   const taxiNeedsInfo = taxiVal > 0 && (!form.taxi_tipo || !form.taxi_origen || !form.taxi_destino);
   const otrosNeedsFoto = otrosVal > 0 && !photos.otros;
   const missingFotos = peajeNeedsFoto || parqNeedsFoto || taxiNeedsFoto || otrosNeedsFoto;
-  const canSave = form.cliente_nombre && form.km_final && totalKm > 0 && !missingFotos && !taxiNeedsInfo;
+
+  // Un registro es válido si hay kilometraje propio O al menos un gasto de apoyo
+  // (taxi, peaje, parqueadero, otros). Ej: se tomó un taxi y no se usó el carro.
+  const hayGastos = peajeVal > 0 || parqVal > 0 || taxiVal > 0 || otrosVal > 0;
+
+  // Motivos por los que aún no se puede guardar (se muestran al usuario para que
+  // el botón nunca quede bloqueado "sin explicación").
+  const faltantes = [];
+  if (!form.cliente_nombre) faltantes.push('Selecciona el cliente o el sitio de la visita.');
+  if (kmInvertidos) faltantes.push('El km final no puede ser menor que el km inicial.');
+  if (totalKm === 0 && !hayGastos) faltantes.push('Registra el kilometraje recorrido o al menos un gasto (peaje, parqueadero, taxi u otros).');
+  if (missingFotos) faltantes.push('Sin soporte no se puede relacionar ningún valor.');
+  if (taxiNeedsInfo) faltantes.push('Completa tipo, origen y destino del taxi.');
+  const canSave = faltantes.length === 0;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -131,6 +154,16 @@ export default function AddEntryModal({ onClose, onSaved }) {
           await kmAPI.uploadPhoto(entry.id, fieldMap[key], file);
         }
       }
+      // Los taxis requieren autorización previa: si no se solicitó a mano, la
+      // solicitud se envía sola al guardar y queda ligada a este registro.
+      if (taxiVal > 0 && authState !== 'sent') {
+        try {
+          await enviarAutorizacionTaxi(entry.id);
+        } catch {
+          alert('El registro se guardó, pero no se pudo enviar la solicitud de autorización del taxi. Solicítala desde el botón del formulario o desde Aprobaciones.');
+        }
+      }
+
       onSaved();
     } catch (err) {
       alert(err.response?.data?.error || 'Error al guardar');
@@ -265,12 +298,14 @@ export default function AddEntryModal({ onClose, onSaved }) {
               {/* Solicitar autorización (taxis requieren autorización previa) */}
               {authState === 'sent' ? (
                 <p className="p-2 bg-emerald-50 rounded-lg text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5 mb-2.5">
-                  <CheckCircle size={12} /> Autorización solicitada al gerente comercial. Queda pendiente para la legalización.
+                  <CheckCircle size={12} /> {authEstado === 'autorizado'
+                    ? 'Autorización registrada automáticamente (no requiere aprobación).'
+                    : 'Autorización solicitada. Queda pendiente para la legalización.'}
                 </p>
               ) : (
                 <button type="button" onClick={solicitarAutorizacionTaxi} disabled={authState === 'sending' || !form.taxi_tipo}
                   className="w-full mb-2.5 py-2 rounded-xl border border-violet-300 text-violet-700 bg-white text-[11px] font-bold hover:bg-violet-50 disabled:opacity-50">
-                  {authState === 'sending' ? 'Enviando solicitud...' : '🔔 Solicitar autorización al gerente comercial'}
+                  {authState === 'sending' ? 'Enviando solicitud...' : '🔔 Solicitar autorización ahora (opcional)'}
                 </button>
               )}
               <PhotoUpload
@@ -283,7 +318,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
               {requiereFacturaTaxi(form.taxi_tipo)
                 ? <p className="mt-2 p-2 bg-red-50 rounded-lg text-[10px] text-red-700 leading-relaxed"><strong>{form.taxi_tipo}:</strong> requiere factura/soporte obligatorio.</p>
                 : <p className="mt-2 p-2 bg-emerald-50 rounded-lg text-[10px] text-emerald-700 leading-relaxed">El taxi convencional / transporte público no exige factura (soporte opcional).</p>}
-              <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Los taxis/apps requieren autorización previa. Puedes registrarlo igual; la autorización queda pendiente para la legalización.</p>
+              <p className="mt-2 p-2 bg-amber-50 rounded-lg text-[10px] text-amber-800 leading-relaxed"><strong>Nota:</strong> Los taxis/apps requieren autorización previa. Guarda el registro con normalidad: la solicitud de autorización se envía sola y queda pendiente para la legalización.</p>
             </>
           )}
         </div>
@@ -296,14 +331,12 @@ export default function AddEntryModal({ onClose, onSaved }) {
         </div>
 
         {/* Warnings */}
-        {(missingFotos || taxiNeedsInfo) && (
+        {faltantes.length > 0 && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4 space-y-1.5">
-            {missingFotos && (
-              <p className="flex items-center gap-2 text-xs font-semibold text-red-600"><AlertTriangle size={14} className="shrink-0" /> Sin soporte no se puede relacionar ningún valor.</p>
-            )}
-            {taxiNeedsInfo && (
-              <p className="flex items-center gap-2 text-xs font-semibold text-red-600"><AlertTriangle size={14} className="shrink-0" /> Completa tipo, origen y destino del taxi.</p>
-            )}
+            <p className="text-[11px] font-bold text-red-700 uppercase">Para guardar falta:</p>
+            {faltantes.map((f) => (
+              <p key={f} className="flex items-center gap-2 text-xs font-semibold text-red-600"><AlertTriangle size={14} className="shrink-0" /> {f}</p>
+            ))}
           </div>
         )}
 
