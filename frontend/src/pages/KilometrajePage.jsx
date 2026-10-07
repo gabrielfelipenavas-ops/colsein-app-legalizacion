@@ -150,11 +150,21 @@ export default function KilometrajePage() {
               // taxis y otros van aparte en "Apoyos" (antes se sumaban todos en
               // una sola columna "Valor" y la fila parecía tener el km inflado).
               const valorKm = parseFloat(e.valor_km || 0);
-              const apoyos = parseFloat(e.peajes || 0) + parseFloat(e.parqueaderos || 0) + parseFloat(e.taxis || 0) + parseFloat(e.otros || 0);
+              // Un taxi ya incluido en una legalización de gastos se paga por esa
+              // legalización (rubro Transportes), no por este reporte.
+              const taxiLegalizado = !!e.taxiExpense?.legalization_id;
+              const apoyos = parseFloat(e.peajes || 0) + parseFloat(e.parqueaderos || 0) + (taxiLegalizado ? 0 : parseFloat(e.taxis || 0)) + parseFloat(e.otros || 0);
               return (
                 <tr key={e.id} className="border-b border-slate-100">
                   <td className="py-2 px-1 font-mono text-[11px] whitespace-nowrap">{dateStr(e.fecha)}</td>
-                  <td className="py-2 px-1 font-semibold max-w-[100px] truncate">{e.cliente_nombre}</td>
+                  <td className="py-2 px-1 font-semibold max-w-[100px] truncate">
+                    {e.cliente_nombre}
+                    {taxiLegalizado && (
+                      <span className="block text-[8px] font-bold text-violet-700 whitespace-nowrap" title="El taxi de este registro se paga por la legalización de gastos, no por este reporte">
+                        🚕 Taxi en Legalización #{e.taxiExpense.legalization_id}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 px-1 text-center">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${e.medio === 'CARRO' ? 'bg-colsein-50 text-colsein-600' : 'bg-amber-50 text-amber-600'}`}>
                       {e.medio === 'CARRO' ? <Car size={10} /> : <Bike size={10} />} {e.medio}

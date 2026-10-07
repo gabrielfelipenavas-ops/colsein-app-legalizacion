@@ -3,6 +3,7 @@ const db = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, REVISORES, puedeAprobar, aprobadoresDe } = require('../roles');
+const { recalculateKmReportsForExpenses } = require('../services/taxiExpenses');
 
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
@@ -167,6 +168,10 @@ router.put('/:id/expenses', auth, async (req, res) => {
 
     const { expense_ids } = req.body;
 
+    // Gastos que estaban antes (para recalcular los reportes de kilometraje
+    // de los taxis que entran o salen de esta legalización)
+    const previos = await db.Expense.findAll({ where: { legalization_id: leg.id }, attributes: ['id'] });
+
     // Remove previous associations
     await db.Expense.update({ legalization_id: null }, { where: { legalization_id: leg.id } });
 
@@ -192,6 +197,10 @@ router.put('/:id/expenses', auth, async (req, res) => {
       pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
       pago_favor_empleado: diff > 0 ? diff : 0,
     });
+
+    // Un taxi incluido aquí deja de sumar en el reporte de kilometraje (y
+    // vuelve a sumar si se quita): evita pagarlo dos veces.
+    await recalculateKmReportsForExpenses([...previos.map(p => p.id), ...(expense_ids || [])]);
 
     const updated = await db.ExpenseLegalization.findByPk(leg.id, {
       include: [{ model: db.Expense, as: 'expenses' }],

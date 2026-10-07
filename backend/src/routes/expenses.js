@@ -340,6 +340,9 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (expense.kilometrage_entry_id) {
+      return res.status(400).json({ error: 'Este taxi se registró en Kilometraje: edítalo desde esa pestaña y el gasto se actualiza solo.' });
+    }
 
     const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
       'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
@@ -411,6 +414,9 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
+    if (expense.kilometrage_entry_id) {
+      return res.status(400).json({ error: 'Este taxi se registró en Kilometraje: elimínalo o ponle valor 0 desde esa pestaña.' });
+    }
     await expense.destroy();
     res.json({ message: 'Eliminado' });
   } catch (err) {

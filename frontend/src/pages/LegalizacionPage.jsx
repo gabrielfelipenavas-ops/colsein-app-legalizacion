@@ -214,7 +214,10 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
               </div>
             ) : (
               <>
-                <p className="text-xs text-slate-400 mb-3">Selecciona los gastos para esta legalización. Asegúrate de que cada gasto tenga la categoría correcta.</p>
+                <p className="text-xs text-slate-400 mb-1">Selecciona los gastos para esta legalización. Asegúrate de que cada gasto tenga la categoría correcta.</p>
+                <p className="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-2.5 py-1.5 mb-3">
+                  🚕 Los taxis y apps de transporte registrados en <strong>Kilometraje</strong> aparecen aquí como gastos de transporte. Si los incluyes, salen en el rubro TRANSPORTES del informe y dejan de sumar en el reporte de kilometraje (no se pagan dos veces).
+                </p>
                 <div className="space-y-2 max-h-[50vh] overflow-auto">
                   {unlinkedExpenses.map(exp => (
                     <button key={exp.id} onClick={() => toggleExpense(exp.id)}
@@ -223,6 +226,7 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
                         <div>
                           <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
                           <span className="text-[10px] text-slate-400 ml-2">{dateStr(exp.fecha)}</span>
+                          {exp.kilometrage_entry_id && <span className="ml-2 text-[9px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">🚕 Kilometraje</span>}
                           <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -419,7 +423,7 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
                   <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="w-4 h-4 accent-colsein-500" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-slate-700 truncate">{CAT_LABELS[e.categoria] || e.categoria} — {e.establecimiento || 'Sin nombre'}</p>
-                    <p className="text-[10px] text-slate-400">{e.fecha}</p>
+                    <p className="text-[10px] text-slate-400">{e.fecha}{e.kilometrage_entry_id && <span className="ml-1.5 font-bold text-violet-700">🚕 Kilometraje</span>}</p>
                   </div>
                   <span className="text-xs font-bold text-slate-700">{fmt(e.valor)}</span>
                 </label>
