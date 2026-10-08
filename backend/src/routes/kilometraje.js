@@ -192,7 +192,7 @@ router.delete('/entries/:id', auth, async (req, res) => {
 });
 
 // POST /api/kilometraje/entries/:id/upload/:field — upload support photo
-router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (req, res) => {
+router.post('/entries/:id/upload/:field', auth, upload.single('foto'), upload.persist, async (req, res) => {
   try {
     const entry = await db.KilometrageEntry.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!entry) return res.status(404).json({ error: 'No encontrado' });
@@ -201,7 +201,10 @@ router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (re
     const allowed = ['peaje_foto', 'parqueadero_foto', 'taxi_foto', 'otros_foto'];
     if (!allowed.includes(field)) return res.status(400).json({ error: 'Campo no válido' });
 
-    const filePath = `/uploads/${req.file.filename}`;
+    // Ruta relativa real del archivo (multer lo guarda en la subcarpeta del mes)
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const rel = require('path').relative(require('path').resolve(uploadDir), require('path').resolve(req.file.path)).replace(/\\/g, '/');
+    const filePath = `/uploads/${rel}`;
     await entry.update({ [field]: filePath });
     // La foto del taxi es el soporte del gasto espejo en la legalización
     if (field === 'taxi_foto') await syncTaxiExpense(entry);

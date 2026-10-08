@@ -5,6 +5,7 @@ const { auth, requireRole } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
 const { generateLegalizationPdf } = require('../services/pdfGenerator');
 const { legalizedTaxiEntryIds } = require('../services/taxiExpenses');
+const fileStore = require('../services/fileStore');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES, ADMIN_SISTEMA } = require('../roles');
@@ -98,6 +99,9 @@ router.get('/legalizacion/:id/pdf', auth, async (req, res) => {
       leg.aprobado_por ? db.User.findByPk(leg.aprobado_por, { attributes: ['nombre'] }) : null,
     ]);
 
+    // La firma se lee del disco: si el contenedor es nuevo, se restaura desde la base de datos
+    if (leg.User.firma_url) await fileStore.ensureLocal(leg.User.firma_url);
+
     const filename = `Legalizacion_Gastos_${leg.User.nombre.replace(/\s/g, '_')}_${leg.id}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -121,7 +125,6 @@ router.get('/legalizacion/:id/facturas', auth, async (req, res) => {
       return res.status(403).json({ error: 'No tienes permiso para descargar estas facturas' });
     }
 
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const filename = `Facturas_Legalizacion_${leg.id}.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -129,19 +132,29 @@ router.get('/legalizacion/:id/facturas', auth, async (req, res) => {
     archive.pipe(res);
 
     let count = 0;
+    const sinArchivo = [];
     for (const e of (leg.expenses || [])) {
-      if (e.imagen_url && e.imagen_url.startsWith('/uploads/')) {
-        const p = path.resolve(uploadDir, e.imagen_url.replace('/uploads/', ''));
-        if (fs.existsSync(p)) {
-          const ext = path.extname(p) || '.jpg';
-          const etq = String(e.establecimiento || e.categoria || 'gasto').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
-          archive.file(p, { name: `${e.fecha}_${etq}_${e.id}${ext}` });
-          count++;
-        }
+      if (!e.imagen_url) continue;
+      // Si el archivo no está en el disco de este contenedor se restaura desde la base de datos
+      const p = await fileStore.ensureLocal(e.imagen_url);
+      if (p) {
+        const ext = path.extname(p) || '.jpg';
+        const etq = String(e.establecimiento || e.categoria || 'gasto').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
+        archive.file(p, { name: `${e.fecha}_${etq}_${e.id}${ext}` });
+        count++;
+      } else {
+        sinArchivo.push(`${e.fecha} · ${e.establecimiento || e.categoria} · gasto #${e.id} (${e.imagen_url})`);
       }
     }
     if (count === 0) {
       archive.append('Esta legalización no tiene facturas/soportes con imagen.', { name: 'SIN_FACTURAS.txt' });
+    }
+    if (sinArchivo.length > 0) {
+      archive.append(
+        'Estos gastos tienen soporte registrado pero el archivo ya no existe en el servidor ' +
+        '(se subió antes de que la app guardara copia en la base de datos). Hay que volver a adjuntarlo:\n\n' + sinArchivo.join('\n'),
+        { name: 'SOPORTES_FALTANTES.txt' },
+      );
     }
     await archive.finalize();
   } catch (err) {
@@ -247,6 +260,10 @@ router.get('/diagnose-images', auth, requireRole(...ADMIN_SISTEMA), async (req, 
         fileExists: exists,
       };
     });
+    // ¿Tiene copia en la base de datos? (sobrevive a los redespliegues)
+    const refs = results.filter(r => r.imagen_url).map(r => fileStore.resolveRef(r.imagen_url)?.rel).filter(Boolean);
+    const enDb = new Set((await db.StoredFile.findAll({ where: { path: refs }, attributes: ['path'] })).map(f => f.path));
+    results.forEach(r => { r.inDatabase = !!(r.imagen_url && enDb.has(fileStore.resolveRef(r.imagen_url)?.rel)); });
 
     const totalWithUrl = results.filter(r => r.imagen_url).length;
     const totalExisting = results.filter(r => r.fileExists).length;
@@ -256,7 +273,7 @@ router.get('/diagnose-images', auth, requireRole(...ADMIN_SISTEMA), async (req, 
       resolvedDir,
       dirExists,
       cwd: process.cwd(),
-      summary: { total: expenses.length, withImageUrl: totalWithUrl, filesFound: totalExisting },
+      summary: { total: expenses.length, withImageUrl: totalWithUrl, filesFound: totalExisting, inDatabase: results.filter(r => r.inDatabase).length },
       expenses: results,
     });
   } catch (err) {
@@ -344,7 +361,7 @@ router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
     for (const match of monthMatches) {
       if (match.attachment_paths && Array.isArray(match.attachment_paths)) {
         for (const att of match.attachment_paths) {
-          if (att.path && fs.existsSync(att.path)) {
+          if (att.path && await fileStore.ensureLocal(att.path)) {
             const label = (match.Expense?.establecimiento || 'factura').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
             archive.file(att.path, { name: `Facturas_Electronicas/${label}_${att.filename}` });
           }

@@ -25,12 +25,24 @@ servidor y la base de datos). Lo que sigue es **configuración**, no programaci�
 
 ---
 
-## Paso 1 — Volumen persistente para las facturas (🔴 CRÍTICO)
+## Paso 1 — Volumen persistente para las facturas (🟠 Recomendado)
 
 **El problema:** Railway usa almacenamiento "efímero". Cada vez que la app se actualiza
-o reinicia, **el disco se borra**. Como las fotos de facturas y soportes se guardan en
-ese disco, **se perderían todas** en cada actualización. Esto se soluciona con un
-*Volumen* (un disco que SÍ se conserva).
+o reinicia, **el disco se borra**.
+
+> ✅ **Desde octubre de 2026 la app guarda una copia de cada factura, foto de soporte y
+> firma en la base de datos** (tabla `stored_files`), que sí es permanente. Si el disco
+> se borra, la app restaura el archivo desde la base de datos de forma automática al
+> verlo en pantalla o al descargar el ZIP / Excel / PDF. Por eso el volumen ya **no es
+> obligatorio** para no perder facturas. Sigue siendo recomendable: evita que la base de
+> datos crezca con las fotos y hace que las imágenes carguen más rápido.
+>
+> Las facturas subidas **antes** de esa fecha en un servidor sin volumen ya no se pueden
+> recuperar: en la app aparecen como "Soporte perdido" y hay que editar el gasto y
+> volver a adjuntar la foto. El ZIP de facturas incluye un archivo
+> `SOPORTES_FALTANTES.txt` con la lista de los que faltan.
+
+Si quieres configurar el volumen de todas formas:
 
 **Pasos en Railway:**
 
@@ -54,8 +66,8 @@ ese disco, **se perderían todas** en cada actualización. Esto se soluciona con
    Si en su lugar ves un aviso ⚠️ sobre "almacenamiento EFÍMERO", la variable no quedó
    bien configurada.
 
-> 💡 **Importante:** Esto solo protege las facturas **a partir de ahora**. Las que se
-> hayan subido antes de configurar el volumen ya no se pueden recuperar.
+> 💡 Al arrancar, la app copia a la base de datos los archivos que encuentre en el disco
+> y aún no tengan copia (verás en los logs una línea `🗄️ Soportes con copia en base de datos: …`).
 
 ---
 

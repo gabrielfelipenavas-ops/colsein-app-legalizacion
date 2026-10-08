@@ -367,6 +367,8 @@ router.post('/save-match', auth, async (req, res) => {
               const safeName = `${email_uid}_${att.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
               const filePath = path.join(userDir, safeName);
               fs.writeFileSync(filePath, att.content);
+              // Copia en la base de datos (el disco del servidor es efímero)
+              await require('../services/fileStore').persistFile(filePath, att.contentType);
               savedPaths.push({ filename: att.filename, path: filePath, contentType: att.contentType });
             }
           }
