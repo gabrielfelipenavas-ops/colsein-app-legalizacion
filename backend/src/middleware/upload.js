@@ -38,4 +38,18 @@ const upload = multer({
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '26214400') },
 });
 
+// Después de upload.single(...): convierte HEIC → JPG, comprime la foto y guarda
+// una copia en la base de datos (el disco de Railway es efímero; ver
+// services/fileStore.js). Si la copia falla, el gasto igual se guarda con el
+// archivo en disco y se deja registro en el log.
+upload.persist = async (req, res, next) => {
+  if (!req.file) return next();
+  try {
+    await require('../services/fileStore').processUpload(req.file);
+  } catch (err) {
+    console.error('[upload] No se pudo guardar la copia del archivo en la base de datos:', err.message);
+  }
+  next();
+};
+
 module.exports = upload;

@@ -91,6 +91,9 @@ if (isProd && !process.env.UPLOAD_DIR) {
 } else {
   console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)}`);
 }
+// Si el archivo no está en el disco de este contenedor (Railway lo borra en cada
+// redespliegue), se restaura desde la base de datos antes de servirlo.
+app.use('/uploads', require('./services/fileStore').restoreMiddleware);
 app.use('/uploads', express.static(path.resolve(uploadDir), {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -151,7 +154,8 @@ app.use((err, req, res, next) => {
   // Errores de subida de archivos (multer) → mensaje claro para el usuario
   if (err && err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'El archivo es demasiado grande. El tamaño máximo permitido es 10 MB.' });
+      const maxMb = Math.round(parseInt(process.env.MAX_FILE_SIZE || '26214400') / 1048576);
+      return res.status(400).json({ error: `El archivo es demasiado grande. El tamaño máximo permitido es ${maxMb} MB.` });
     }
     return res.status(400).json({ error: 'No se pudo subir el archivo. Verifica el formato e intenta de nuevo.' });
   }
@@ -171,6 +175,11 @@ async function start() {
       console.log(`🚀 API corriendo en http://0.0.0.0:${PORT}`);
       console.log(`📋 Endpoints: http://0.0.0.0:${PORT}/api/health`);
     });
+    // Archivos que ya estaban en disco y aún no tienen copia en la base de datos
+    // (facturas, fotos de kilometraje, firmas): se copian en segundo plano.
+    require('./services/fileStore').backfillReferencedFiles()
+      .then((r) => console.log(`🗄️  Soportes: ${r.referenciados} referenciados · ${r.copiados} copiados ahora a la base de datos · ${r.faltantes} perdidos (ni en disco ni en la base de datos)`))
+      .catch((err) => console.warn('⚠️  No se pudo copiar los soportes a la base de datos:', err.message));
   } catch (err) {
     console.error('❌ Error al conectar BD:', err.message);
     console.log('💡 Asegúrate de que PostgreSQL esté corriendo (docker-compose up -d)');

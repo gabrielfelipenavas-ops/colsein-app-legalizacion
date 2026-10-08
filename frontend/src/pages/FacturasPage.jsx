@@ -1164,7 +1164,13 @@ export default function FacturasPage() {
               <div key={exp.id} className="p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-2 mb-2">
                   {exp.imagen_url && !exp.imagen_url.toLowerCase().endsWith('.pdf') ? (
-                    <img src={exp.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200" onError={e => { e.target.style.display = 'none'; }} />
+                    <img src={exp.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-slate-200"
+                      title="Soporte de la factura"
+                      onError={e => {
+                        // El archivo ya no existe en el servidor (se subió antes de que la app
+                        // guardara copia en la base de datos): avisar en vez de ocultarlo.
+                        e.target.outerHTML = '<div class="w-12 h-12 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center shrink-0 text-[9px] font-bold text-red-600 text-center leading-tight" title="El archivo del soporte ya no existe en el servidor. Edita el gasto y vuelve a adjuntar la foto.">Soporte perdido</div>';
+                      }} />
                   ) : exp.imagen_url ? (
                     <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><FileText size={16} className="text-blue-500" /></div>
                   ) : (

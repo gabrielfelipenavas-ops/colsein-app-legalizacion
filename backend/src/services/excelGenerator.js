@@ -582,14 +582,12 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
       ws3.getCell(imgRow, 4).font = boldFont9;
       imgRow++;
 
-      // Try to embed the image
-      const imgPath = exp.imagen_url?.startsWith('/uploads/')
-        ? path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''))
-        : null;
+      // Try to embed the image (si no está en disco, se restaura desde la base de datos)
+      const imgPath = await require('./fileStore').ensureLocal(exp.imagen_url);
 
-      const exists = imgPath && fs.existsSync(imgPath);
+      const exists = !!imgPath;
       if (!exists) {
-        console.warn(`[excelGenerator] Image not found for expense ${exp.id}: ${imgPath} (imagen_url=${exp.imagen_url})`);
+        console.warn(`[excelGenerator] Image not found for expense ${exp.id} (imagen_url=${exp.imagen_url})`);
       }
 
       if (exists) {

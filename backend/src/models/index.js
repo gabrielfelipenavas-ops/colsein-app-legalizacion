@@ -283,6 +283,17 @@ const AuthRequest = sequelize.define('AuthRequest', {
   comentarios: Sequelize.TEXT,
 }, { tableName: 'authorization_requests', underscored: true });
 
+// ── StoredFile (copia en base de datos de cada archivo subido) ──
+// El disco de Railway es efímero: se borra en cada redespliegue. Para no perder
+// facturas, fotos de soporte ni firmas, cada archivo subido se guarda también
+// aquí y se restaura al disco cuando falta (ver services/fileStore.js).
+const StoredFile = sequelize.define('StoredFile', {
+  path: { type: Sequelize.STRING(500), primaryKey: true }, // ruta relativa a UPLOAD_DIR, ej. 2026-10/uuid.jpg
+  mime: Sequelize.STRING(100),
+  size: Sequelize.INTEGER,
+  data: { type: Sequelize.BLOB('long'), allowNull: false },
+}, { tableName: 'stored_files', underscored: true });
+
 // ── ASSOCIATIONS ──
 User.hasMany(KilometrageReport, { foreignKey: 'user_id' });
 KilometrageReport.belongsTo(User, { foreignKey: 'user_id' });
@@ -339,5 +350,6 @@ db.Trip = Trip;
 db.AuthRequest = AuthRequest;
 db.Establishment = Establishment;
 db.AccountingMapping = AccountingMapping;
+db.StoredFile = StoredFile;
 
 module.exports = db;

@@ -103,30 +103,9 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/expenses — create expense (with optional image)
-// Helper: convert non-browser-friendly formats (HEIC/HEIF) to JPG on upload
-async function normalizeUploadedImage(file) {
-  if (!file) return file;
-  const name = (file.originalname || '').toLowerCase();
-  const mt = (file.mimetype || '').toLowerCase();
-  const needsConversion =
-    name.endsWith('.heic') || name.endsWith('.heif') ||
-    mt === 'image/heic' || mt === 'image/heif';
-  if (!needsConversion) return file;
-  try {
-    const sharp = require('sharp');
-    const newPath = file.path.replace(/\.(heic|heif)$/i, '.jpg');
-    await sharp(file.path).jpeg({ quality: 88 }).toFile(newPath);
-    try { require('fs').unlinkSync(file.path); } catch {}
-    file.path = newPath;
-    file.mimetype = 'image/jpeg';
-    file.originalname = file.originalname.replace(/\.(heic|heif)$/i, '.jpg');
-  } catch (err) {
-    console.warn('[normalize] HEIC conversion failed, leaving original:', err.message);
-  }
-  return file;
-}
-
-router.post('/', auth, upload.single('imagen'), async (req, res) => {
+// La imagen pasa por upload.persist: HEIC → JPG, compresión y copia en la base
+// de datos para que no se pierda cuando el disco del servidor se reinicie.
+router.post('/', auth, upload.single('imagen'), upload.persist, async (req, res) => {
   try {
     const data = buildExpenseData(req.body);
     data.user_id = req.user.id;
@@ -151,7 +130,6 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
-      await normalizeUploadedImage(req.file);
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       data.imagen_url = `/uploads/${rel}`;
@@ -199,11 +177,11 @@ router.post('/ocr', auth, upload.single('imagen'), async (req, res) => {
     if (ocrPath !== req.file.path) { try { require('fs').unlinkSync(ocrPath); } catch {} }
 
     const parsed = parseColombianReceipt(text);
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
-    const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
-    const imagePath = `/uploads/${rel}`;
+    // La imagen del OCR es temporal: la app vuelve a enviar el archivo al guardar
+    // el gasto. Se borra para no llenar el disco con copias que nadie usa.
+    try { require('fs').unlinkSync(req.file.path); } catch {}
 
-    res.json({ ocr_data: parsed, imagen_url: imagePath, raw_text: text });
+    res.json({ ocr_data: parsed, imagen_url: null, raw_text: text });
   } catch (err) {
     console.error('OCR error:', err);
     res.status(500).json({ error: 'Error al procesar la imagen' });
@@ -336,7 +314,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // PUT /api/expenses/:id — update expense (optionally replace image)
-router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
+router.put('/:id', auth, upload.single('imagen'), upload.persist, async (req, res) => {
   try {
     const expense = await db.Expense.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!expense) return res.status(404).json({ error: 'No encontrado' });
@@ -362,10 +340,13 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
-      await normalizeUploadedImage(req.file);
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
       updates.imagen_url = `/uploads/${rel}`;
+      // La imagen anterior ya no se usa: se borra del disco y de la base de datos
+      if (expense.imagen_url && expense.imagen_url !== updates.imagen_url) {
+        require('../services/fileStore').removeFile(expense.imagen_url).catch(() => {});
+      }
     }
 
     // Recalcular el valor legalizable con los valores combinados (existentes + cambios)

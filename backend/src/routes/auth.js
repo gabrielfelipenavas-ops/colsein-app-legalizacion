@@ -8,6 +8,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../models');
 const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const fileStore = require('../services/fileStore');
 
 // POST /api/auth/login
 router.post('/login', [
@@ -81,13 +82,15 @@ router.post('/firma', auth, upload.single('firma'), async (req, res) => {
     const filename = `firma_${req.user.id}_${uuid()}.png`;
     fs.writeFileSync(path.join(firmasDir, filename), processed);
     const firma_url = `/uploads/firmas/${filename}`;
+    // Copia en la base de datos: la firma no se pierde al reiniciar el servidor
+    await fileStore.persistFile(path.join(firmasDir, filename), 'image/png');
 
     // Borrar la firma anterior del disco (si existía) para no acumular archivos
     const user = await db.User.findByPk(req.user.id);
     if (user.firma_url && user.firma_url.startsWith('/uploads/firmas/')) {
       const old = path.resolve(uploadDir, user.firma_url.replace('/uploads/', ''));
       // Solo dentro del directorio de firmas (evita path traversal)
-      if (old.startsWith(path.resolve(firmasDir))) { try { fs.unlinkSync(old); } catch {} }
+      if (old.startsWith(path.resolve(firmasDir))) await fileStore.removeFile(old);
     }
 
     await user.update({ firma_url });
