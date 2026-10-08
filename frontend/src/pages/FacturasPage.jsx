@@ -1180,6 +1180,9 @@ export default function FacturasPage() {
                       {exp.observaciones?.includes('[SIN SOPORTE') && (
                         <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Sin soporte</span>
                       )}
+                      {exp.kilometrage_entry_id && (
+                        <span className="text-[9px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded" title="Taxi registrado en la pestaña Kilometraje. Se puede incluir en una legalización (rubro Transportes).">🚕 Kilometraje</span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-700 font-semibold truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
                     <p className="text-sm font-extrabold text-slate-800">{fmt(exp.valor)}</p>
@@ -1191,17 +1194,25 @@ export default function FacturasPage() {
                     className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors">
                     <Eye size={12} /> Ver
                   </button>
-                  <button
-                    onClick={() => { setSelectedExpense(exp); setOpenInEdit(true); }}
-                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors">
-                    <Edit size={12} /> Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(exp.id)}
-                    className="px-3 py-2 rounded-lg bg-white border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
-                    title="Eliminar">
-                    <Trash2 size={12} />
-                  </button>
+                  {exp.kilometrage_entry_id ? (
+                    <p className="flex-[2] flex items-center justify-center px-2 py-2 rounded-lg bg-violet-50 text-violet-700 text-[10px] font-semibold text-center">
+                      Se edita o elimina desde la pestaña Kilometraje
+                    </p>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { setSelectedExpense(exp); setOpenInEdit(true); }}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors">
+                        <Edit size={12} /> Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(exp.id)}
+                        className="px-3 py-2 rounded-lg bg-white border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
+                        title="Eliminar">
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

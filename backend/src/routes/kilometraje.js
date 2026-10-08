@@ -5,6 +5,7 @@ const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
+const { syncTaxiExpense, removeTaxiExpense, recalculateKmReport } = require('../services/taxiExpenses');
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -15,7 +16,7 @@ router.get('/reports', auth, async (req, res) => {
 
     const reports = await db.KilometrageReport.findAll({
       where,
-      include: [{ model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client, attributes: ['id', 'nombre', 'ciudad'] }] }],
+      include: [{ model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client, attributes: ['id', 'nombre', 'ciudad'] }, { model: db.Expense, as: 'taxiExpense', attributes: ['id', 'legalization_id'] }] }],
       order: [['periodo_anio', 'DESC'], ['periodo_mes', 'DESC']],
     });
     res.json(reports);
@@ -30,7 +31,7 @@ router.get('/reports/:id', auth, async (req, res) => {
   try {
     const report = await db.KilometrageReport.findOne({
       where: { id: req.params.id },
-      include: [{ model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client }] }, { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona', 'vehiculo_tipo', 'placa'] }],
+      include: [{ model: db.KilometrageEntry, as: 'entries', include: [{ model: db.Client }, { model: db.Expense, as: 'taxiExpense', attributes: ['id', 'legalization_id'] }] }, { model: db.User, attributes: ['id', 'nombre', 'cedula', 'zona', 'vehiculo_tipo', 'placa'] }],
     });
     if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
     // Solo el dueño o un aprobador pueden ver el reporte (evita ver datos ajenos por ID)
@@ -109,6 +110,10 @@ router.post('/entries', auth, [
       origen_lat, origen_lng, destino_lat, destino_lng, distancia_api,
     });
 
+    // El taxi del registro se refleja como gasto (categoría Taxi) para poder
+    // incluirlo en una legalización de gastos.
+    await syncTaxiExpense(entry);
+
     // Recalculate report totals
     await recalculateReport(report.id);
 
@@ -162,6 +167,7 @@ router.put('/entries/:id', auth, async (req, res) => {
     updates.valor_km = Math.round(updates.total_km * tarifa * 100) / 100;
 
     await entry.update(updates);
+    await syncTaxiExpense(entry);
     await recalculateReport(entry.report_id);
 
     res.json(entry);
@@ -176,6 +182,7 @@ router.delete('/entries/:id', auth, async (req, res) => {
     const entry = await db.KilometrageEntry.findOne({ where: { id: req.params.id, user_id: req.user.id } });
     if (!entry) return res.status(404).json({ error: 'No encontrado' });
     const reportId = entry.report_id;
+    await removeTaxiExpense(entry.id);
     await entry.destroy();
     await recalculateReport(reportId);
     res.json({ message: 'Eliminado' });
@@ -196,6 +203,8 @@ router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (re
 
     const filePath = `/uploads/${req.file.filename}`;
     await entry.update({ [field]: filePath });
+    // La foto del taxi es el soporte del gasto espejo en la legalización
+    if (field === 'taxi_foto') await syncTaxiExpense(entry);
 
     res.json({ url: filePath });
   } catch (err) {
@@ -357,21 +366,8 @@ router.get('/pending', auth, requireRole(...VISORES), async (req, res) => {
   }
 });
 
-// Helper: recalculate totals
-async function recalculateReport(reportId) {
-  const entries = await db.KilometrageEntry.findAll({ where: { report_id: reportId } });
-  const totals = entries.reduce((acc, e) => ({
-    total_km: acc.total_km + parseFloat(e.total_km || 0),
-    total_valor_km: acc.total_valor_km + parseFloat(e.valor_km || 0),
-    total_peajes: acc.total_peajes + parseFloat(e.peajes || 0),
-    total_parqueaderos: acc.total_parqueaderos + parseFloat(e.parqueaderos || 0),
-    total_taxis: acc.total_taxis + parseFloat(e.taxis || 0),
-    total_otros: acc.total_otros + parseFloat(e.otros || 0),
-  }), { total_km: 0, total_valor_km: 0, total_peajes: 0, total_parqueaderos: 0, total_taxis: 0, total_otros: 0 });
-
-  totals.valor_total = totals.total_valor_km + totals.total_peajes + totals.total_parqueaderos + totals.total_taxis + totals.total_otros;
-
-  await db.KilometrageReport.update(totals, { where: { id: reportId } });
-}
+// Helper: recalculate totals (los taxis ya incluidos en una legalización no
+// se suman aquí; ver services/taxiExpenses.js)
+const recalculateReport = recalculateKmReport;
 
 module.exports = router;

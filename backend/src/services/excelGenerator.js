@@ -99,8 +99,13 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
       ws.getCell(row, 9).numFmt = currencyFmt;
       ws.getCell(row, 10).value = parseFloat(entry.parqueaderos) || 0;
       ws.getCell(row, 10).numFmt = currencyFmt;
-      ws.getCell(row, 11).value = (parseFloat(entry.taxis) || 0) + (parseFloat(entry.otros) || 0);
+      // Un taxi que ya está en una legalización de gastos no se cobra aquí
+      const taxiLegalizado = tarifas.taxisLegalizados && tarifas.taxisLegalizados.has(entry.id);
+      ws.getCell(row, 11).value = (taxiLegalizado ? 0 : (parseFloat(entry.taxis) || 0)) + (parseFloat(entry.otros) || 0);
       ws.getCell(row, 11).numFmt = currencyFmt;
+      if (taxiLegalizado) {
+        ws.getCell(row, 11).note = `Taxi de $${Math.round(parseFloat(entry.taxis))} incluido en la Legalización de Gastos (no se suma aquí)`;
+      }
     } else {
       ws.getCell(row, 4).value = 'CARRO';
       ws.getCell(row, 4).alignment = { horizontal: 'center' };
@@ -200,31 +205,38 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   const boldFont9 = { name: 'Arial', bold: true, size: 9 };
   const normalFont9 = { name: 'Arial', size: 9 };
 
-  // Category rows (transportes includes taxis, peajes, parqueaderos)
+  // Rubros del formato oficial. Taxis, apps, peajes y parqueaderos NO son
+  // kilometraje: van en TRANSPORTES (y en el "Detalle de transporte").
   const CAT_ROWS = [
-    { key: 'alojamiento', label: 'ALOJAMIENTO' },
-    { key: 'alimentacion', label: 'ALIMENTACIÓN' },
-    { key: 'transportes', label: 'TRANSPORTES (Taxis, Peajes, Parqueaderos)' },
-    { key: 'imprevistos', label: 'IMPREVISTOS' },
-    { key: 'representacion', label: 'GASTOS DE REPRESENTACIÓN' },
+    { key: 'alojamiento', label: 'ALOJAMIENTO', dia: 'alojamiento_dia' },
+    { key: 'alimentacion', label: 'ALIMENTACIÓN', dia: 'alimentacion_dia' },
+    { key: 'transportes', label: 'TRANSPORTES', dia: 'transportes_dia' },
+    { key: 'imprevistos', label: 'IMPREVISTOS', dia: 'imprevistos_dia' },
+    { key: 'representacion', label: 'GASTOS DE REPRESENTACIÓN', dia: 'representacion_dia' },
   ];
   const transportKeys = ['transportes', 'peaje', 'parqueadero', 'taxi'];
+  const rubroDe = (cat) => transportKeys.includes(cat) ? 'transportes' : (CAT_ROWS.some(c => c.key === cat) ? cat : 'imprevistos');
+  // Valor que cuenta para el reembolso (excluye propina / excedente de servicio)
+  const legalizable = (e) => parseFloat(e.valor_legalizable != null ? e.valor_legalizable : (e.valor || 0));
 
   // Get unique sorted dates
   const sorted = [...expenses].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
   const uniqueDates = [...new Set(sorted.map(e => e.fecha))].sort();
 
-  // Build matrix: category -> date -> sum
+  // Build matrix: category -> date -> sum (+ tarjeta de crédito por rubro)
   const matrix = {};
-  CAT_ROWS.forEach(c => { matrix[c.key] = {}; uniqueDates.forEach(d => { matrix[c.key][d] = 0; }); });
+  const tcPorRubro = {};
+  CAT_ROWS.forEach(c => { matrix[c.key] = {}; tcPorRubro[c.key] = 0; uniqueDates.forEach(d => { matrix[c.key][d] = 0; }); });
 
   sorted.forEach(exp => {
-    const val = parseFloat(exp.valor || 0);
-    let catKey = exp.categoria;
-    if (transportKeys.includes(catKey)) catKey = 'transportes';
-    if (!matrix[catKey]) catKey = 'imprevistos'; // fallback for 'otro'
-    if (matrix[catKey]) matrix[catKey][exp.fecha] = (matrix[catKey][exp.fecha] || 0) + val;
+    const val = legalizable(exp);
+    const catKey = rubroDe(exp.categoria);
+    matrix[catKey][exp.fecha] = (matrix[catKey][exp.fecha] || 0) + val;
+    if (exp.medio_pago === 'tarjeta_credito') tcPorRubro[catKey] += val;
   });
+  // Gasto programado = presupuesto diario del anticipo × días del viaje
+  const duracion = travelRequest ? (parseInt(travelRequest.duracion_dias) || 0) : 0;
+  const programado = (c) => travelRequest ? parseFloat(travelRequest[c.dia] || 0) * duracion : 0;
 
   // Check if credit card was used
   const usedTC = sorted.some(e => e.medio_pago === 'tarjeta_credito');
@@ -235,10 +247,14 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   const motivo = extraData.motivo || '';
 
   // ── COLUMN WIDTHS ──
-  // A=label(30), B..N=dates(14 each), last=TOTAL(15)
-  const totalCols = 1 + uniqueDates.length + 1; // label + dates + total
+  // A=label(30), B..N=dates(14 each), luego TARJETA CRÉDITO, GASTO PROGRAMADO y GASTO REAL
+  const tcCol = uniqueDates.length + 2;
+  const progCol = uniqueDates.length + 3;
+  const totalCols = uniqueDates.length + 4; // label + dates + TC + programado + real
   ws.getColumn(1).width = 34;
   for (let i = 2; i <= uniqueDates.length + 1; i++) ws.getColumn(i).width = 14;
+  ws.getColumn(tcCol).width = 14;
+  ws.getColumn(progCol).width = 16;
   ws.getColumn(totalCols).width = 16;
 
   // ── TITLE ──
@@ -304,12 +320,14 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
   });
 
-  const totalCol = uniqueDates.length + 2;
-  ws.getCell(matrixStart, totalCol).value = 'TOTAL';
-  ws.getCell(matrixStart, totalCol).font = headerFont;
-  ws.getCell(matrixStart, totalCol).fill = headerFill;
-  ws.getCell(matrixStart, totalCol).border = borderThin;
-  ws.getCell(matrixStart, totalCol).alignment = { horizontal: 'center' };
+  const totalCol = totalCols;
+  [[tcCol, 'TARJETA CRÉDITO'], [progCol, 'GASTO PROGRAMADO'], [totalCol, 'GASTO REAL']].forEach(([c, label]) => {
+    ws.getCell(matrixStart, c).value = label;
+    ws.getCell(matrixStart, c).font = headerFont;
+    ws.getCell(matrixStart, c).fill = headerFill;
+    ws.getCell(matrixStart, c).border = borderThin;
+    ws.getCell(matrixStart, c).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  });
   ws.getRow(matrixStart).height = 24;
 
   // Category rows
@@ -332,7 +350,15 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
       cell.alignment = { horizontal: 'right' };
       if (val > 0) cell.font = { ...normalFont9, bold: true };
     });
-    // Total column
+    // Tarjeta de crédito y gasto programado del rubro
+    [[tcCol, tcPorRubro[cat.key]], [progCol, programado(cat)]].forEach(([c, v]) => {
+      ws.getCell(r, c).value = v;
+      ws.getCell(r, c).numFmt = currencyFmt;
+      ws.getCell(r, c).font = normalFont9;
+      ws.getCell(r, c).border = borderThin;
+      ws.getCell(r, c).alignment = { horizontal: 'right' };
+    });
+    // Total column (GASTO REAL)
     ws.getCell(r, totalCol).value = rowTotal;
     ws.getCell(r, totalCol).numFmt = currencyFmt;
     ws.getCell(r, totalCol).font = { name: 'Arial', bold: true, size: 10 };
@@ -357,6 +383,15 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     cell.fill = headerFill;
     cell.border = borderThin;
     cell.alignment = { horizontal: 'right' };
+  });
+
+  [[tcCol, CAT_ROWS.reduce((s, c) => s + tcPorRubro[c.key], 0)], [progCol, CAT_ROWS.reduce((s, c) => s + programado(c), 0)]].forEach(([c, v]) => {
+    ws.getCell(totalRow, c).value = v;
+    ws.getCell(totalRow, c).numFmt = currencyFmt;
+    ws.getCell(totalRow, c).font = { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    ws.getCell(totalRow, c).fill = headerFill;
+    ws.getCell(totalRow, c).border = borderThin;
+    ws.getCell(totalRow, c).alignment = { horizontal: 'right' };
   });
 
   // Grand total
@@ -393,8 +428,66 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     ws.getCell(r, totalCol).border = borderThin;
   });
 
+  // ── DETALLES DE TRANSPORTE (taxis, apps, peajes, parqueaderos) ──
+  // Como en el formato oficial: FECHA | CONCEPTO | VALOR y TOTAL TRANSPORTE.
+  const transporte = sorted.filter(e => rubroDe(e.categoria) === 'transportes');
+  const catNombre = { taxi: 'TAXI', peaje: 'PEAJE', parqueadero: 'PARQUEADERO', transportes: '' };
+  const conceptoTransporte = (e) => {
+    const est = (e.establecimiento || '').trim().toUpperCase();
+    const cat = catNombre[e.categoria] || '';
+    if (!est) return cat || 'TRANSPORTE';
+    if (['transportes', 'taxi'].includes(e.categoria) || est.startsWith(cat)) return est;
+    return `${cat} ${est}`;
+  };
+  let tRow = sumRow + summary.length + 2;
+  ws.mergeCells(tRow, 1, tRow, totalCol);
+  ws.getCell(tRow, 1).value = 'DETALLES DE TRANSPORTE';
+  ws.getCell(tRow, 1).font = headerFont;
+  ws.getCell(tRow, 1).fill = headerFill;
+  ws.getCell(tRow, 1).alignment = { horizontal: 'center' };
+  ws.getCell(tRow, 1).border = borderThin;
+  tRow += 1;
+  const conceptoEnd = Math.max(2, totalCol - 1);
+  ws.getCell(tRow, 1).value = 'FECHA';
+  if (conceptoEnd > 2) ws.mergeCells(tRow, 2, tRow, conceptoEnd);
+  ws.getCell(tRow, 2).value = 'CONCEPTO';
+  ws.getCell(tRow, totalCol).value = 'VALOR';
+  [1, 2, totalCol].forEach(c => {
+    ws.getCell(tRow, c).font = boldFont9;
+    ws.getCell(tRow, c).fill = catFill;
+    ws.getCell(tRow, c).border = borderThin;
+    ws.getCell(tRow, c).alignment = { horizontal: 'center' };
+  });
+  tRow += 1;
+  const tFirst = tRow;
+  (transporte.length ? transporte : [null]).forEach(e => {
+    if (e) {
+      ws.getCell(tRow, 1).value = new Date(e.fecha + 'T12:00:00');
+      ws.getCell(tRow, 1).numFmt = 'dd/mm/yyyy';
+      ws.getCell(tRow, 2).value = conceptoTransporte(e) + (e.kilometrage_entry_id ? '  (registrado en Kilometraje)' : '');
+      ws.getCell(tRow, totalCol).value = legalizable(e);
+    } else {
+      ws.getCell(tRow, totalCol).value = 0;
+    }
+    if (conceptoEnd > 2) ws.mergeCells(tRow, 2, tRow, conceptoEnd);
+    ws.getCell(tRow, totalCol).numFmt = currencyFmt;
+    [1, 2, totalCol].forEach(c => { ws.getCell(tRow, c).font = normalFont9; ws.getCell(tRow, c).border = borderThin; });
+    ws.getCell(tRow, 1).alignment = { horizontal: 'center' };
+    tRow += 1;
+  });
+  ws.mergeCells(tRow, 1, tRow, conceptoEnd);
+  ws.getCell(tRow, 1).value = 'TOTAL TRANSPORTE';
+  ws.getCell(tRow, 1).font = { name: 'Arial', bold: true, size: 10 };
+  ws.getCell(tRow, 1).alignment = { horizontal: 'right' };
+  ws.getCell(tRow, 1).border = borderThin;
+  const colLetter = ws.getColumn(totalCol).letter;
+  ws.getCell(tRow, totalCol).value = { formula: `SUM(${colLetter}${tFirst}:${colLetter}${tRow - 1})` };
+  ws.getCell(tRow, totalCol).numFmt = currencyFmt;
+  ws.getCell(tRow, totalCol).font = { name: 'Arial', bold: true, size: 10 };
+  ws.getCell(tRow, totalCol).border = borderThin;
+
   // ── SIGNATURES ──
-  const sigRow = sumRow + summary.length + 2;
+  const sigRow = tRow + 2;
   ws.getCell(sigRow, 1).value = 'FIRMA COLABORADOR:';
   ws.getCell(sigRow, 1).font = boldFont9;
   ws.getCell(sigRow + 2, 1).value = 'REVISADO (LÍDER REGIONAL):';

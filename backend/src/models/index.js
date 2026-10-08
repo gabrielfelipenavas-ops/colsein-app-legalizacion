@@ -303,6 +303,9 @@ ExpenseLegalization.hasMany(Expense, { foreignKey: 'legalization_id', as: 'expen
 User.hasMany(Expense, { foreignKey: 'user_id' });
 Expense.belongsTo(User, { foreignKey: 'user_id' });
 Expense.belongsTo(ExpenseLegalization, { foreignKey: 'legalization_id' });
+// Gasto espejo del taxi registrado en Kilometraje (ver services/taxiExpenses.js)
+KilometrageEntry.hasOne(Expense, { foreignKey: 'kilometrage_entry_id', as: 'taxiExpense' });
+Expense.belongsTo(KilometrageEntry, { foreignKey: 'kilometrage_entry_id' });
 
 User.hasMany(EmailMatch, { foreignKey: 'user_id' });
 EmailMatch.belongsTo(User, { foreignKey: 'user_id' });

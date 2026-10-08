@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { auth, requireRole } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
 const { generateLegalizationPdf } = require('../services/pdfGenerator');
+const { legalizedTaxiEntryIds } = require('../services/taxiExpenses');
 
 // Roles que pueden descargar documentos de otros empleados
 const { VISORES, ADMIN_SISTEMA } = require('../roles');
@@ -28,7 +29,9 @@ router.get('/kilometraje/:reportId/excel', auth, async (req, res) => {
     const tarifaCarro = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || process.env.TARIFA_CARRO || '600.65';
     const tarifaMoto = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || process.env.TARIFA_MOTO || '507.03';
 
-    const wb = await generateKilometrageExcel(report, report.entries, report.User, { carro: tarifaCarro, moto: tarifaMoto });
+    // Taxis ya incluidos en una legalización de gastos: no se suman en este reporte
+    const taxisLegalizados = await legalizedTaxiEntryIds(report.entries.map(e => e.id));
+    const wb = await generateKilometrageExcel(report, report.entries, report.User, { carro: tarifaCarro, moto: tarifaMoto, taxisLegalizados });
 
     const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const filename = `Registro_Transporte_${meses[report.periodo_mes - 1]}_${report.periodo_anio}_${report.User.nombre.replace(/\s/g, '_')}.xlsx`;
@@ -294,7 +297,8 @@ router.get('/monthly-pack/:year/:month', auth, async (req, res) => {
     if (kmReport) {
       const tarifaCarro = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_carro' } }))?.valor || process.env.TARIFA_CARRO || '600.65';
       const tarifaMoto = (await db.SystemConfig.findOne({ where: { clave: 'tarifa_moto' } }))?.valor || process.env.TARIFA_MOTO || '507.03';
-      const kmWb = await generateKilometrageExcel(kmReport, kmReport.entries, kmReport.User, { carro: tarifaCarro, moto: tarifaMoto });
+      const taxisLegalizados = await legalizedTaxiEntryIds(kmReport.entries.map(e => e.id));
+      const kmWb = await generateKilometrageExcel(kmReport, kmReport.entries, kmReport.User, { carro: tarifaCarro, moto: tarifaMoto, taxisLegalizados });
       const kmBuffer = await kmWb.xlsx.writeBuffer();
       archive.append(kmBuffer, { name: `Movilidad/Registro_Transporte_${mesNombre}_${year}.xlsx` });
     }
