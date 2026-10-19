@@ -396,6 +396,9 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
     direccion: expense.direccion || '',
     valor: expense.valor || '',
     iva: expense.iva || '',
+    impoconsumo: Number(expense.impoconsumo) ? expense.impoconsumo : '',
+    servicio: Number(expense.servicio) ? expense.servicio : '',
+    propina: Number(expense.propina) ? expense.propina : '',
     medio_pago: expense.medio_pago || 'efectivo',
     numero_factura: expense.numero_factura || '',
     cufe: expense.cufe || '',
@@ -433,6 +436,9 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
         direccion: d.direccion || prev.direccion,
         valor: d.valor_total ? String(d.valor_total) : prev.valor,
         iva: d.iva ? String(d.iva) : prev.iva,
+        impoconsumo: d.impoconsumo ? String(d.impoconsumo) : prev.impoconsumo,
+        servicio: d.servicio ? String(d.servicio) : prev.servicio,
+        propina: d.propina ? String(d.propina) : prev.propina,
         medio_pago: d.medio_pago === 'Tarjeta Débito' ? 'tarjeta_debito'
           : d.medio_pago === 'Tarjeta Crédito' ? 'tarjeta_credito'
           : d.medio_pago === 'Efectivo' ? 'efectivo' : prev.medio_pago,
@@ -451,6 +457,19 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
 
   const fechaWarning = validarFechaGasto(form.fecha);
 
+  // Valor que SÍ cuenta para la legalización: excluye la propina y el excedente de
+  // servicio sobre el 10%; reconoce IVA e impuesto al consumo. (Igual que el backend.)
+  const valorLegalizable = () => {
+    const v = parseFloat(form.valor) || 0;
+    const iva = parseFloat(form.iva) || 0;
+    const impo = parseFloat(form.impoconsumo) || 0;
+    const serv = parseFloat(form.servicio) || 0;
+    const prop = parseFloat(form.propina) || 0;
+    const base = Math.max(0, v - iva - impo - serv - prop);
+    const servComp = Math.min(serv, base * 0.10);
+    return Math.round((base + iva + impo + servComp) * 100) / 100;
+  };
+
   const handleSave = async () => {
     if (fechaWarning) {
       alert(fechaWarning);
@@ -459,7 +478,13 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
     setSaving(true);
     try {
       const fd = new FormData();
-      Object.entries(form).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
+      // Los campos de dinero vacíos se envían como "0" para que el servidor los
+      // limpie (si no se envían, conserva el valor anterior y no se puede borrar
+      // una propina o un servicio mal leídos por el OCR).
+      Object.entries(form).forEach(([k, v]) => {
+        if (['iva', 'impoconsumo', 'servicio', 'propina'].includes(k)) { fd.append(k, v === '' || v == null ? '0' : v); return; }
+        if (v !== undefined && v !== null) fd.append(k, v);
+      });
       if (newFile) fd.append('imagen', newFile);
       await expenseAPI.update(expense.id, fd);
       onSaved?.();
@@ -627,6 +652,34 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                   <input type="number" value={form.iva} onChange={e => set('iva', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
                 </div>
               </div>
+
+              {/* Impuestos / servicio / propina — mismas reglas que al crear el gasto */}
+              {(form.categoria === 'alimentacion' || Number(form.impoconsumo) || Number(form.servicio) || Number(form.propina)) ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-bold text-amber-700">Impuestos y servicio (alimentación)</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Imp. al consumo</label>
+                      <input type="number" value={form.impoconsumo} onChange={e => set('impoconsumo', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Servicio (máx 10%)</label>
+                      <input type="number" value={form.servicio} onChange={e => set('servicio', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-amber-700 mb-1 block">Propina (no cuenta para legalización)</label>
+                    <input type="number" value={form.propina} onChange={e => set('propina', e.target.value)} placeholder="$0" className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                  </div>
+                  {(parseFloat(form.valor) || 0) > 0 && (
+                    <div className="flex justify-between pt-2 border-t border-amber-200">
+                      <span className="text-xs font-semibold text-amber-700">Valor que se legaliza</span>
+                      <span className="text-sm font-extrabold text-amber-800">{fmt(valorLegalizable())}</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-amber-600 leading-relaxed">La propina no se reconoce; el servicio se reconoce hasta el 10%. El IVA y el impuesto al consumo sí cuentan.</p>
+                </div>
+              ) : null}
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
                 <div className="flex gap-1.5">
@@ -658,6 +711,11 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                 ['No. Factura', expense.numero_factura || '—'],
                 ['Valor', fmt(expense.valor)],
                 ['IVA', fmt(expense.iva)],
+                ...(Number(expense.impoconsumo) ? [['Imp. al consumo', fmt(expense.impoconsumo)]] : []),
+                ...(Number(expense.servicio) ? [['Servicio', fmt(expense.servicio)]] : []),
+                ...(Number(expense.propina) ? [['Propina (no se reconoce)', fmt(expense.propina)]] : []),
+                ...(expense.valor_legalizable != null && Number(expense.valor_legalizable) !== Number(expense.valor)
+                  ? [['Valor que se legaliza', fmt(expense.valor_legalizable)]] : []),
                 ['Medio de Pago', MEDIOS_PAGO.find(m => m.value === expense.medio_pago)?.label || expense.medio_pago],
                 ['CUFE', expense.cufe || '—'],
               ].map(([label, value]) => (
