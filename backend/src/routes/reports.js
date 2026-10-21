@@ -204,7 +204,39 @@ router.get('/dashboard', auth, async (req, res) => {
       order: [['periodo_mes', 'ASC']],
     });
 
+    // Total acumulado por mes = kilometraje (km + peajes + parqueaderos + taxis
+    // aún no legalizados + otros) + facturas/gastos del mes (valor legalizable).
+    // Los taxis espejo de Kilometraje que NO están en una legalización ya se
+    // cuentan en el reporte de kilometraje, así que aquí se excluyen para no
+    // sumarlos dos veces (los legalizados salen del reporte y entran por aquí).
+    const yearExpenses = await db.Expense.findAll({
+      where: {
+        user_id: userId,
+        fecha: { [Op.between]: [`${anio}-01-01`, `${anio}-12-31`] },
+        [Op.not]: { kilometrage_entry_id: { [Op.ne]: null }, legalization_id: null },
+      },
+      attributes: ['fecha', 'valor', 'valor_legalizable'],
+    });
+    const meses = {};
+    const mesDe = (m) => (meses[m] = meses[m] || { mes: m, anio, kilometraje: 0, facturas: 0, num_facturas: 0 });
+    for (const r of yearReports) mesDe(r.periodo_mes).kilometraje += parseFloat(r.valor_total || 0);
+    for (const e of yearExpenses) {
+      const m = parseInt(String(e.fecha).slice(5, 7), 10);
+      const v = e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0);
+      const row = mesDe(m);
+      row.facturas += v;
+      row.num_facturas += 1;
+    }
+    const monthlyTotals = Object.values(meses)
+      .map(r => ({ ...r, total: Math.round((r.kilometraje + r.facturas) * 100) / 100 }))
+      .filter(r => r.total > 0 || r.mes === mes)
+      .sort((a, b) => b.mes - a.mes);
+    const currentMonthTotal = monthlyTotals.find(r => r.mes === mes)
+      || { mes, anio, kilometraje: 0, facturas: 0, num_facturas: 0, total: 0 };
+
     res.json({
+      monthly_totals: monthlyTotals,
+      current_month_total: currentMonthTotal,
       current_report: currentReport,
       current_report_visitas: currentReportVisitas,
       pending_anticipos: pendingAnticipos,

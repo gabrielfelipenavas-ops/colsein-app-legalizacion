@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
 import { fmt, validarFechaGasto } from '../utils/helpers';
+import SoporteViewer from '../components/SoporteViewer';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -407,6 +408,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [ocrDone, setOcrDone] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const runOCR = async () => {
@@ -491,14 +493,15 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
               <img
                 src={newPreview || imageSrc}
                 alt="Soporte"
-                className="w-full max-h-56 sm:max-h-72 object-contain"
+                className={`w-full max-h-56 sm:max-h-72 object-contain ${imageSrc && !newPreview ? 'cursor-zoom-in' : ''}`}
+                onClick={() => { if (imageSrc && !newPreview) setViewerOpen(true); }}
                 onError={() => { if (!newPreview) setImgError(true); }}
               />
               {imageSrc && !newPreview && (
-                <a href={imageSrc} target="_blank" rel="noopener noreferrer"
+                <button type="button" onClick={() => setViewerOpen(true)}
                    className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
-                  <ExternalLink size={10} /> Abrir
-                </a>
+                  <ExternalLink size={10} /> Ver grande
+                </button>
               )}
             </div>
           )}
@@ -511,19 +514,21 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
               <p className="text-[10px] text-red-600 mb-2">
                 Puede ser un formato que el navegador no renderiza (ej. HEIC) o el archivo ya no está disponible en el servidor.
               </p>
-              <a href={imageSrc} target="_blank" rel="noopener noreferrer"
-                 className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
-                <ExternalLink size={12} /> Intentar abrir en una pestaña nueva
-              </a>
+              <p className="text-[10px] text-red-600 mb-2">
+                Si el archivo se perdió, vuelve a subir la foto con "Reemplazar soporte" (botón Editar).
+              </p>
               <p className="text-[9px] text-slate-400 mt-2 break-all">Ruta: {imageSrc}</p>
             </div>
           )}
           {isPdf && !newFile && (
-            <a href={imageSrc} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl hover:bg-blue-100">
+            <button type="button" onClick={() => setViewerOpen(true)} className="w-full flex items-center gap-3 p-3 bg-blue-50 rounded-xl hover:bg-blue-100 text-left">
               <FileText size={20} className="text-blue-500" />
-              <span className="text-sm font-semibold text-blue-700">Abrir PDF del soporte</span>
+              <span className="text-sm font-semibold text-blue-700">Ver PDF del soporte</span>
               <ExternalLink size={14} className="text-blue-500 ml-auto" />
-            </a>
+            </button>
+          )}
+          {viewerOpen && imageSrc && (
+            <SoporteViewer src={imageSrc} isPdf={isPdf} onClose={() => setViewerOpen(false)} />
           )}
           {!imageSrc && !newPreview && !isPdf && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
