@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Download, AlertTriangle } from 'lucide-react';
 
 // Visor de soportes (foto o PDF de una factura) DENTRO de la app.
@@ -34,7 +35,9 @@ export default function SoporteViewer({ src, isPdf = false, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  // Se monta directamente en <body> (portal) para cubrir toda la pantalla aunque
+  // el modal que lo abre tenga animaciones/transformaciones.
+  return createPortal(
     <div className="fixed inset-0 z-[100] bg-black flex flex-col" onClick={e => e.stopPropagation()}>
       <div className="shrink-0 flex items-center justify-between gap-2 px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] bg-black/80">
         {isPdf && pdfUrl ? (
@@ -68,6 +71,7 @@ export default function SoporteViewer({ src, isPdf = false, onClose }) {
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
