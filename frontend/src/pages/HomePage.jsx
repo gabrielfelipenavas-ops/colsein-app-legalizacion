@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Camera, FileText, Download, Zap, Clock, Car, Bike, AlertTriangle, Bell, Paperclip, ChevronRight } from 'lucide-react';
+import { MapPin, Camera, FileText, Download, Zap, Clock, Car, Bike, AlertTriangle, Bell, Paperclip, ChevronRight, CalendarDays } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../services/api';
 import { fmt, fmtNum, dateStr, calcKm, monthName } from '../utils/helpers';
@@ -21,6 +21,11 @@ export default function HomePage() {
   // Antes se usaba entries.length, que son los últimos 10 registros de CUALQUIER
   // periodo (por eso Inicio decía "10 visitas" mientras Reportes decía "1 del mes").
   const numVisitas = dashboard?.current_report_visitas ?? 0;
+  // Total del mes incluyendo TODO: kilometraje (km, peajes, parqueaderos, taxis)
+  // + facturas/gastos. Si el servidor aún no envía el dato, cae al kilometraje.
+  const mesActual = dashboard?.current_month_total;
+  const totalMes = mesActual ? parseFloat(mesActual.total || 0) : valorTotal;
+  const mensuales = dashboard?.monthly_totals || [];
 
   return (
     <>
@@ -33,12 +38,37 @@ export default function HomePage() {
             <p className="text-[11px] opacity-60 mt-0.5">{numVisitas} visita{numVisitas === 1 ? '' : 's'} este mes</p>
           </div>
           <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-2xl p-4 text-white">
-            <p className="text-[10px] opacity-80 font-semibold uppercase tracking-wide">Valor a pagar</p>
-            <p className="text-xl font-extrabold mt-1 tracking-tight">{fmt(valorTotal)}</p>
+            <p className="text-[10px] opacity-80 font-semibold uppercase tracking-wide">Total del mes</p>
+            <p className="text-xl font-extrabold mt-1 tracking-tight">{fmt(totalMes)}</p>
             <p className="text-[11px] opacity-60 mt-0.5">{monthName(new Date().getMonth())} {new Date().getFullYear()}</p>
+            {mesActual && (
+              <div className="mt-2 pt-2 border-t border-white/20 space-y-0.5 text-[10px] opacity-80">
+                <div className="flex justify-between gap-2"><span>Kilometraje</span><span className="font-semibold">{fmt(mesActual.kilometraje)}</span></div>
+                <div className="flex justify-between gap-2"><span>Facturas</span><span className="font-semibold">{fmt(mesActual.facturas)}</span></div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Acumulado por mes (kilometraje + facturas) */}
+      {mensuales.length > 0 && (
+        <div className="card mx-4 mt-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold mb-1"><CalendarDays size={16} className="text-emerald-600" /> Acumulado por mes</h3>
+          <p className="text-[11px] text-slate-400 mb-2">Kilometraje (km, peajes, parqueaderos y taxis) + facturas · {new Date().getFullYear()}</p>
+          {mensuales.map(m => (
+            <div key={m.mes} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold">{monthName(m.mes - 1)}</p>
+                <p className="text-[11px] text-slate-400">
+                  Km {fmt(m.kilometraje)} · Facturas {fmt(m.facturas)}{m.num_facturas ? ` (${m.num_facturas})` : ''}
+                </p>
+              </div>
+              <p className="text-[13px] font-bold text-emerald-700 font-mono shrink-0">{fmt(m.total)}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="card mx-4 mt-3">
