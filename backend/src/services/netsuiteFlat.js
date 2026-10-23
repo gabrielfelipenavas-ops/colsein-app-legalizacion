@@ -44,7 +44,10 @@ function generateFlat(legalizations, mappingByCat, opts = {}) {
       const concepto = map.concepto_tributario || 'COMPRAS';
       const ref = clean(exp.numero_factura) || `LEG${leg.id}-${exp.id}`;
       const desc = clean(exp.establecimiento || exp.categoria).toUpperCase();
-      const nota = `${ref} / ${desc} / ${batchLabel}`;
+      // Quién pagó: lo que pagó la empresa (tarjeta corporativa / Cabify) o el
+      // anticipo se marca en la nota para que contabilidad no lo pague de nuevo.
+      const quien = exp.pagado_por === 'empresa' ? ' / PAGO EMPRESA' : exp.pagado_por === 'anticipo' ? ' / PAGO ANTICIPO' : '';
+      const nota = `${ref} / ${desc} / ${batchLabel}${quien}`;
       const fecha = fmtFecha(exp.fecha);
 
       const iva = parseFloat(exp.iva) || 0;

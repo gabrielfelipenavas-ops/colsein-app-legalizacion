@@ -4,6 +4,7 @@ import { kmAPI, reportAPI, tripAPI } from '../services/api';
 import { fmt, fmtNum, dateStr, calcKm, monthName } from '../utils/helpers';
 import AddEntryModal from '../components/AddEntryModal';
 import RecorridoModal from '../components/RecorridoModal';
+import { PagadoPorBadge } from '../components/PagadoPor';
 
 export default function KilometrajePage() {
   const [reports, setReports] = useState([]);
@@ -40,6 +41,11 @@ export default function KilometrajePage() {
   const totalPeajes = parseFloat(report?.total_peajes || 0);
   const totalTaxis = parseFloat(report?.total_taxis || 0);
   const valorTotal = parseFloat(report?.valor_total || 0);
+  // Apoyos relacionados pero que NO se pagan por este reporte (los pagó la
+  // empresa con tarjeta corporativa / Cabify, o se pagaron con anticipo)
+  const pagadoEmpresa = parseFloat(report?.total_pagado_empresa || 0);
+  const pagadoAnticipo = parseFloat(report?.total_pagado_anticipo || 0);
+  const totalApoyos = totalPeajes + parseFloat(report?.total_parqueaderos || 0) + totalTaxis + parseFloat(report?.total_otros || 0);
 
   const prevMonth = () => setPeriod(p => ({ month: p.month === 1 ? 12 : p.month - 1, year: p.month === 1 ? p.year - 1 : p.year }));
   const nextMonth = () => setPeriod(p => ({ month: p.month === 12 ? 1 : p.month + 1, year: p.month === 12 ? p.year + 1 : p.year }));
@@ -177,7 +183,10 @@ export default function KilometrajePage() {
                     )}
                   </td>
                   <td className="py-2 px-1 text-right font-bold font-mono text-colsein-600">{fmt(valorKm)}</td>
-                  <td className="py-2 px-1 text-right font-mono text-slate-500">{apoyos > 0 ? fmt(apoyos) : '—'}</td>
+                  <td className="py-2 px-1 text-right font-mono text-slate-500">
+                    {apoyos > 0 ? fmt(apoyos) : '—'}
+                    {apoyos > 0 && <PagadoPorBadge value={e.pagado_por} className="block w-fit ml-auto mt-0.5" />}
+                  </td>
                 </tr>
               );
             })}
@@ -191,10 +200,22 @@ export default function KilometrajePage() {
                 <td colSpan={3} className="py-2 px-1">TOTAL</td>
                 <td className="py-2 px-1 text-right font-mono">{fmtNum(totalKm)}</td>
                 <td className="py-2 px-1 text-right font-mono text-colsein-600">{fmt(totalValorKm)}</td>
-                <td className="py-2 px-1 text-right font-mono text-slate-500">{fmt(Math.max(0, valorTotal - totalValorKm))}</td>
+                <td className="py-2 px-1 text-right font-mono text-slate-500">{fmt(totalApoyos)}</td>
               </tr>
+              {pagadoEmpresa > 0 && (
+                <tr className="bg-amber-50 text-amber-800 font-semibold">
+                  <td colSpan={4} className="py-1.5 px-1 text-[11px]">🏢 Pagado por la empresa (tarjeta corporativa / Cabify) · no se paga aquí</td>
+                  <td colSpan={2} className="py-1.5 px-1 text-right font-mono">− {fmt(pagadoEmpresa)}</td>
+                </tr>
+              )}
+              {pagadoAnticipo > 0 && (
+                <tr className="bg-violet-50 text-violet-800 font-semibold">
+                  <td colSpan={4} className="py-1.5 px-1 text-[11px]">💵 Pagado con anticipo · se cruza en la legalización del viaje</td>
+                  <td colSpan={2} className="py-1.5 px-1 text-right font-mono">− {fmt(pagadoAnticipo)}</td>
+                </tr>
+              )}
               <tr className="bg-colsein-50 font-extrabold">
-                <td colSpan={4} className="py-2 px-1 text-colsein-700">TOTAL A PAGAR (km + apoyos)</td>
+                <td colSpan={4} className="py-2 px-1 text-colsein-700">TOTAL A PAGAR (km + apoyos propios)</td>
                 <td colSpan={2} className="py-2 px-1 text-right font-mono text-colsein-700">{fmt(valorTotal)}</td>
               </tr>
             </tfoot>

@@ -4,6 +4,7 @@ const { auth, requireRole } = require('../middleware/auth');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, REVISORES, puedeAprobar, aprobadoresDe } = require('../roles');
 const { recalculateKmReportsForExpenses } = require('../services/taxiExpenses');
+const { computeLegalizationTotals } = require('../services/pagos');
 
 // GET /api/legalizations — list user's legalizations
 router.get('/', auth, async (req, res) => {
@@ -140,12 +141,13 @@ router.put('/:id', auth, async (req, res) => {
 
     // Recalculate totals if valor_anticipo changed
     if (valor_anticipo !== undefined) {
-      const gasto_real_total = parseFloat(leg.gasto_real_total || 0);
-      const anticipo = parseFloat(updates.valor_anticipo);
-      const diff = gasto_real_total - anticipo;
+      const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id } });
+      const t = computeLegalizationTotals(expenses, updates.valor_anticipo);
       await leg.update({
-        pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
-        pago_favor_empleado: diff > 0 ? diff : 0,
+        gasto_real_total: t.gasto_real_total,
+        total_pagado_empresa: t.total_pagado_empresa,
+        pago_favor_empresa: t.pago_favor_empresa,
+        pago_favor_empleado: t.pago_favor_empleado,
       });
     }
 
@@ -185,17 +187,15 @@ router.put('/:id/expenses', auth, async (req, res) => {
 
     // Recalculate totals
     const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id } });
-    // Suma el valor legalizable (excluye propina y excedente de servicio); si un gasto
-    // antiguo no lo tiene, usa el valor total como respaldo.
-    const gasto_real_total = expenses.reduce((sum, e) =>
-      sum + (e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0)), 0);
-    const valor_anticipo = parseFloat(leg.valor_anticipo || 0);
-    const diff = gasto_real_total - valor_anticipo;
-
+    // Gasto real = suma del valor legalizable (excluye propina y excedente de
+    // servicio). Lo que pagó la empresa (tarjeta corporativa / Cabify) se
+    // relaciona pero no se reembolsa ni se cruza con el anticipo (ver services/pagos.js).
+    const t = computeLegalizationTotals(expenses, leg.valor_anticipo);
     await leg.update({
-      gasto_real_total,
-      pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
-      pago_favor_empleado: diff > 0 ? diff : 0,
+      gasto_real_total: t.gasto_real_total,
+      total_pagado_empresa: t.total_pagado_empresa,
+      pago_favor_empresa: t.pago_favor_empresa,
+      pago_favor_empleado: t.pago_favor_empleado,
     });
 
     // Un taxi incluido aquí deja de sumar en el reporte de kilometraje (y

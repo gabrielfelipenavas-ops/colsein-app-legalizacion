@@ -1,4 +1,5 @@
 const db = require('../models');
+const { computeLegalizationTotals, pagadoPorDe } = require('./pagos');
 
 // ── Taxis registrados en Kilometraje ↔ gastos de la legalización ──
 //
@@ -41,13 +42,12 @@ async function recalculateLegalizationTotals(legalizationId) {
   const leg = await db.ExpenseLegalization.findByPk(legalizationId);
   if (!leg || LOCKED.includes(leg.estado)) return;
   const expenses = await db.Expense.findAll({ where: { legalization_id: leg.id } });
-  const gasto_real_total = expenses.reduce((sum, e) =>
-    sum + (e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0)), 0);
-  const diff = gasto_real_total - parseFloat(leg.valor_anticipo || 0);
+  const t = computeLegalizationTotals(expenses, leg.valor_anticipo);
   await leg.update({
-    gasto_real_total,
-    pago_favor_empresa: diff < 0 ? Math.abs(diff) : 0,
-    pago_favor_empleado: diff > 0 ? diff : 0,
+    gasto_real_total: t.gasto_real_total,
+    total_pagado_empresa: t.total_pagado_empresa,
+    pago_favor_empresa: t.pago_favor_empresa,
+    pago_favor_empleado: t.pago_favor_empleado,
   });
 }
 
@@ -76,6 +76,10 @@ async function syncTaxiExpense(entry) {
     valor_legalizable: valor,
     imagen_url: entry.taxi_foto || null,
     observaciones: 'Registrado desde Kilometraje',
+    // Quién pagó se hereda del registro de kilometraje. Si lo pagó la empresa,
+    // el medio típico es la cuenta corporativa (Cabify / app de la empresa).
+    pagado_por: pagadoPorDe(entry),
+    ...(pagadoPorDe(entry) === 'empresa' ? { medio_pago: 'cuenta_empresa' } : {}),
   };
 
   if (!existing) return db.Expense.create(data);
@@ -115,16 +119,28 @@ async function legalizedTaxiEntryIds(entryIds) {
 async function recalculateKmReport(reportId) {
   const entries = await db.KilometrageEntry.findAll({ where: { report_id: reportId } });
   const legalizados = await legalizedTaxiEntryIds(entries.map(e => e.id));
-  const totals = entries.reduce((acc, e) => ({
-    total_km: acc.total_km + parseFloat(e.total_km || 0),
-    total_valor_km: acc.total_valor_km + parseFloat(e.valor_km || 0),
-    total_peajes: acc.total_peajes + parseFloat(e.peajes || 0),
-    total_parqueaderos: acc.total_parqueaderos + parseFloat(e.parqueaderos || 0),
-    total_taxis: acc.total_taxis + (legalizados.has(e.id) ? 0 : parseFloat(e.taxis || 0)),
-    total_otros: acc.total_otros + parseFloat(e.otros || 0),
-  }), { total_km: 0, total_valor_km: 0, total_peajes: 0, total_parqueaderos: 0, total_taxis: 0, total_otros: 0 });
+  const totals = entries.reduce((acc, e) => {
+    const taxi = legalizados.has(e.id) ? 0 : parseFloat(e.taxis || 0);
+    const apoyos = parseFloat(e.peajes || 0) + parseFloat(e.parqueaderos || 0) + taxi + parseFloat(e.otros || 0);
+    const quien = pagadoPorDe(e);
+    return {
+      total_km: acc.total_km + parseFloat(e.total_km || 0),
+      total_valor_km: acc.total_valor_km + parseFloat(e.valor_km || 0),
+      total_peajes: acc.total_peajes + parseFloat(e.peajes || 0),
+      total_parqueaderos: acc.total_parqueaderos + parseFloat(e.parqueaderos || 0),
+      total_taxis: acc.total_taxis + taxi,
+      total_otros: acc.total_otros + parseFloat(e.otros || 0),
+      // Apoyos que NO se pagan por este reporte: los pagó la empresa (tarjeta
+      // corporativa / Cabify) o se pagaron con el anticipo (se cruzan en la
+      // legalización del viaje). El kilometraje (km × tarifa) siempre se paga.
+      total_pagado_empresa: acc.total_pagado_empresa + (quien === 'empresa' ? apoyos : 0),
+      total_pagado_anticipo: acc.total_pagado_anticipo + (quien === 'anticipo' ? apoyos : 0),
+    };
+  }, { total_km: 0, total_valor_km: 0, total_peajes: 0, total_parqueaderos: 0, total_taxis: 0, total_otros: 0, total_pagado_empresa: 0, total_pagado_anticipo: 0 });
 
-  totals.valor_total = totals.total_valor_km + totals.total_peajes + totals.total_parqueaderos + totals.total_taxis + totals.total_otros;
+  // VALOR A PAGAR al colaborador = km + apoyos que pagó con su dinero
+  totals.valor_total = totals.total_valor_km + totals.total_peajes + totals.total_parqueaderos + totals.total_taxis + totals.total_otros
+    - totals.total_pagado_empresa - totals.total_pagado_anticipo;
   await db.KilometrageReport.update(totals, { where: { id: reportId } });
 }
 

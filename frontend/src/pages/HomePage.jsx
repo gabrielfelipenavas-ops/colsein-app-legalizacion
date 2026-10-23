@@ -45,6 +45,9 @@ export default function HomePage() {
               <div className="mt-2 pt-2 border-t border-white/20 space-y-0.5 text-[10px] opacity-80">
                 <div className="flex justify-between gap-2"><span>Kilometraje</span><span className="font-semibold">{fmt(mesActual.kilometraje)}</span></div>
                 <div className="flex justify-between gap-2"><span>Facturas</span><span className="font-semibold">{fmt(mesActual.facturas)}</span></div>
+                {parseFloat(mesActual.facturas_empresa || 0) > 0 && (
+                  <div className="flex justify-between gap-2 opacity-90"><span>· pagó la empresa</span><span className="font-semibold">{fmt(mesActual.facturas_empresa)}</span></div>
+                )}
               </div>
             )}
           </div>
@@ -61,7 +64,7 @@ export default function HomePage() {
               <div className="min-w-0">
                 <p className="text-[13px] font-semibold">{monthName(m.mes - 1)}</p>
                 <p className="text-[11px] text-slate-400">
-                  Km {fmt(m.kilometraje)} · Facturas {fmt(m.facturas)}{m.num_facturas ? ` (${m.num_facturas})` : ''}
+                  Km {fmt(m.kilometraje)} · Facturas {fmt(m.facturas)}{m.num_facturas ? ` (${m.num_facturas})` : ''}{parseFloat(m.facturas_empresa || 0) > 0 ? ` · 🏢 empresa ${fmt(m.facturas_empresa)}` : ''}
                 </p>
               </div>
               <p className="text-[13px] font-bold text-emerald-700 font-mono shrink-0">{fmt(m.total)}</p>

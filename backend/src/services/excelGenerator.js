@@ -1,5 +1,6 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
+const { pagadoPorDe, PAGADO_POR_LABEL, MEDIO_PAGO_LABEL, computeLegalizationTotals } = require('./pagos');
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -20,6 +21,7 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
     { width: 14 },  // I PEAJES
     { width: 16 },  // J PARQUEADEROS
     { width: 14 },  // K OTROS (TAXIS)
+    { width: 13 },  // L PAGÓ (quién pagó los apoyos)
   ];
 
   const blue = '004A7C';
@@ -64,7 +66,7 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
 
   // ── TABLE HEADER ──
   const headerRow = 10;
-  const headers = ['', 'FECHA', 'CLIENTE', 'MEDIO', 'KM INICIAL', 'KM FINAL', 'TOTAL KM', 'KILOMETRAJE', 'PEAJES', 'PARQUEADEROS', 'OTROS\n(TAXIS)'];
+  const headers = ['', 'FECHA', 'CLIENTE', 'MEDIO', 'KM INICIAL', 'KM FINAL', 'TOTAL KM', 'KILOMETRAJE', 'PEAJES', 'PARQUEADEROS', 'OTROS\n(TAXIS)', 'PAGÓ\nAPOYOS'];
   headers.forEach((h, i) => {
     const cell = ws.getCell(headerRow, i + 1);
     cell.value = h;
@@ -106,6 +108,17 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
       if (taxiLegalizado) {
         ws.getCell(row, 11).note = `Taxi de $${Math.round(parseFloat(entry.taxis))} incluido en la Legalización de Gastos (no se suma aquí)`;
       }
+      // Quién pagó los apoyos (peajes, parqueadero, taxi, otros) de este día
+      const apoyos = (parseFloat(entry.peajes) || 0) + (parseFloat(entry.parqueaderos) || 0) + (taxiLegalizado ? 0 : (parseFloat(entry.taxis) || 0)) + (parseFloat(entry.otros) || 0);
+      const quien = pagadoPorDe(entry);
+      ws.getCell(row, 12).value = apoyos > 0 ? PAGADO_POR_LABEL[quien] : '';
+      ws.getCell(row, 12).alignment = { horizontal: 'center' };
+      if (apoyos > 0 && quien !== 'personal') {
+        ws.getCell(row, 12).font = { name: 'Arial', size: 9, bold: true, color: { argb: quien === 'empresa' ? 'B45309' : '6D28D9' } };
+        ws.getCell(row, 12).note = quien === 'empresa'
+          ? 'Pagado por la empresa (tarjeta corporativa / cuenta Cabify): se relaciona pero no se paga al colaborador'
+          : 'Pagado con el anticipo del viaje: se cruza en la legalización de gastos, no se paga aquí';
+      }
     } else {
       ws.getCell(row, 4).value = 'CARRO';
       ws.getCell(row, 4).alignment = { horizontal: 'center' };
@@ -114,14 +127,14 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
     }
 
     // Borders
-    for (let c = 1; c <= 11; c++) {
+    for (let c = 1; c <= 12; c++) {
       ws.getCell(row, c).border = borderThin;
-      ws.getCell(row, c).font = { name: 'Arial', size: 9 };
+      ws.getCell(row, c).font = { ...(ws.getCell(row, c).font || {}), name: 'Arial', size: 9 };
     }
 
     // Alternate row color
     if (i % 2 === 0) {
-      for (let c = 1; c <= 11; c++) {
+      for (let c = 1; c <= 12; c++) {
         ws.getCell(row, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
       }
     }
@@ -148,20 +161,40 @@ async function generateKilometrageExcel(report, entries, user, tarifas) {
   ws.getCell(totalsRow, 11).value = { formula: `SUM(K${dataStart}:K${dataEnd})` };
   ws.getCell(totalsRow, 11).numFmt = currencyFmt;
 
-  for (let c = 1; c <= 11; c++) {
+  for (let c = 1; c <= 12; c++) {
     ws.getCell(totalsRow, c).border = borderThin;
     ws.getCell(totalsRow, c).font = { ...ws.getCell(totalsRow, c).font, bold: true };
     ws.getCell(totalsRow, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightBlue } };
   }
 
   // ── VALOR A PAGAR ──
-  const payRow = totalsRow + 2;
+  // Los apoyos que pagó la empresa (tarjeta corporativa / Cabify) o que se
+  // pagaron con anticipo se relacionan arriba pero NO se pagan por este reporte.
+  const pagadoEmpresa = parseFloat(report.total_pagado_empresa || 0);
+  const pagadoAnticipo = parseFloat(report.total_pagado_anticipo || 0);
+  let r = totalsRow + 2;
+  const deducciones = [];
+  const lineaResumen = (label, value, opts = {}) => {
+    ws.mergeCells(r, 3, r, 8);
+    ws.getCell(r, 3).value = label;
+    ws.getCell(r, 3).font = { name: 'Arial', bold: true, size: opts.size || 9, color: opts.color ? { argb: opts.color } : undefined };
+    ws.getCell(r, 3).alignment = { horizontal: 'right' };
+    ws.getCell(r, 9).value = '$';
+    ws.getCell(r, 10).value = value;
+    ws.getCell(r, 10).numFmt = currencyFmt;
+    ws.getCell(r, 10).font = { name: 'Arial', bold: true, size: opts.size || 10, color: opts.color ? { argb: opts.color } : undefined };
+    return r++;
+  };
+  const totalRow = lineaResumen('TOTAL KILOMETRAJE + APOYOS', { formula: `H${totalsRow}+I${totalsRow}+J${totalsRow}+K${totalsRow}` });
+  if (pagadoEmpresa > 0) deducciones.push(lineaResumen('(−) PAGADO POR LA EMPRESA — tarjeta corporativa / Cabify (no se paga aquí)', -pagadoEmpresa, { color: 'B45309' }));
+  if (pagadoAnticipo > 0) deducciones.push(lineaResumen('(−) PAGADO CON ANTICIPO — se cruza en la legalización del viaje', -pagadoAnticipo, { color: '6D28D9' }));
+  const payRow = r;
   ws.mergeCells(payRow, 7, payRow, 8);
   ws.getCell(payRow, 7).value = 'VALOR A PAGAR';
   ws.getCell(payRow, 7).font = { name: 'Arial', bold: true, size: 11 };
   ws.getCell(payRow, 7).alignment = { horizontal: 'right' };
   ws.getCell(payRow, 9).value = '$';
-  ws.getCell(payRow, 10).value = { formula: `H${totalsRow}+I${totalsRow}+J${totalsRow}+K${totalsRow}` };
+  ws.getCell(payRow, 10).value = { formula: [totalRow, ...deducciones].map(rr => `J${rr}`).join('+') };
   ws.getCell(payRow, 10).numFmt = currencyFmt;
   ws.getCell(payRow, 10).font = { name: 'Arial', bold: true, size: 14, color: { argb: blue } };
 
@@ -232,14 +265,16 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     const val = legalizable(exp);
     const catKey = rubroDe(exp.categoria);
     matrix[catKey][exp.fecha] = (matrix[catKey][exp.fecha] || 0) + val;
-    if (exp.medio_pago === 'tarjeta_credito') tcPorRubro[catKey] += val;
+    // Columna "TARJETA CRÉDITO" del formato = lo que pagó directamente la empresa
+    if (pagadoPorDe(exp) === 'empresa') tcPorRubro[catKey] += val;
   });
   // Gasto programado = presupuesto diario del anticipo × días del viaje
   const duracion = travelRequest ? (parseInt(travelRequest.duracion_dias) || 0) : 0;
   const programado = (c) => travelRequest ? parseFloat(travelRequest[c.dia] || 0) * duracion : 0;
 
-  // Check if credit card was used
-  const usedTC = sorted.some(e => e.medio_pago === 'tarjeta_credito');
+  // Totales según quién pagó (misma regla del servidor: services/pagos.js)
+  const tot = computeLegalizationTotals(sorted, legalization.valor_anticipo);
+  const fmtCop = (n) => '$ ' + Math.round(n).toLocaleString('es-CO');
   const moneda = legalization.moneda || 'COP';
   let extraData = {};
   try { extraData = JSON.parse(legalization.observaciones_imprevistos || '{}'); } catch {}
@@ -276,7 +311,8 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     ['CÉDULA:', user.cedula],
     ['TIPO:', tipo === 'local' ? 'Gasto Local' : 'Viaje'],
     ['MONEDA:', moneda === 'COP' ? 'Pesos Colombianos (COP)' : moneda === 'USD' ? 'Dólares (USD)' : moneda === 'EUR' ? 'Euros (EUR)' : moneda],
-    ['TARJETA CRÉDITO:', usedTC ? 'Sí' : 'No'],
+    ['PAGÓ LA EMPRESA:', tot.total_pagado_empresa > 0 ? `${fmtCop(tot.total_pagado_empresa)} (tarjeta corporativa / Cabify)` : 'No'],
+    ['PAGADO CON ANTICIPO:', tot.total_pagado_anticipo > 0 ? fmtCop(tot.total_pagado_anticipo) : 'No'],
   ];
   if (legalization.ciudades_visitadas) info.push(['CIUDAD(ES):', legalization.ciudades_visitadas]);
   if (travelRequest) {
@@ -321,7 +357,7 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   });
 
   const totalCol = totalCols;
-  [[tcCol, 'TARJETA CRÉDITO'], [progCol, 'GASTO PROGRAMADO'], [totalCol, 'GASTO REAL']].forEach(([c, label]) => {
+  [[tcCol, 'PAGÓ LA EMPRESA'], [progCol, 'GASTO PROGRAMADO'], [totalCol, 'GASTO REAL']].forEach(([c, label]) => {
     ws.getCell(matrixStart, c).value = label;
     ws.getCell(matrixStart, c).font = headerFont;
     ws.getCell(matrixStart, c).fill = headerFill;
@@ -410,6 +446,8 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
 
   const summary = [
     ['TOTAL GASTOS REALES', grandTotal, blue],
+    ['PAGADO POR LA EMPRESA (tarjeta corporativa / Cabify — se relaciona, no se reembolsa)', tot.total_pagado_empresa, 'B45309'],
+    ['A CARGO DEL COLABORADOR (gasto real − pagado por la empresa)', tot.a_cargo_colaborador, '333333'],
     ['VALOR ANTICIPO RECIBIDO', anticipoVal, '555555'],
     ['SALDO A FAVOR DE LA EMPRESA (Empleado debe devolver)', favorEmpresa, 'CC0000'],
     ['SALDO A FAVOR DEL EMPLEADO (Empresa debe reembolsar)', favorEmpleado, '00802B'],
@@ -504,9 +542,9 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
   // ── DETAIL SHEET ──
   const ws2 = wb.addWorksheet('DETALLE GASTOS');
   ws2.columns = [
-    { width: 5 }, { width: 13 }, { width: 16 }, { width: 25 }, { width: 15 }, { width: 15 }, { width: 14 }, { width: 12 }, { width: 14 }, { width: 13 }, { width: 15 },
+    { width: 5 }, { width: 13 }, { width: 16 }, { width: 25 }, { width: 15 }, { width: 15 }, { width: 14 }, { width: 12 }, { width: 14 }, { width: 15 }, { width: 14 }, { width: 15 },
   ];
-  const dHeaders = ['#', 'FECHA', 'CATEGORÍA', 'ESTABLECIMIENTO', 'NIT', 'No. FACTURA', 'VALOR', 'IVA', 'TOTAL', 'MEDIO PAGO', 'CIUDAD'];
+  const dHeaders = ['#', 'FECHA', 'CATEGORÍA', 'ESTABLECIMIENTO', 'NIT', 'No. FACTURA', 'VALOR', 'IVA', 'TOTAL', 'MEDIO PAGO', 'QUIÉN PAGÓ', 'CIUDAD'];
   dHeaders.forEach((h, i) => {
     const cell = ws2.getCell(1, i + 1);
     cell.value = h;
@@ -521,7 +559,7 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     imprevistos: 'Imprevistos', representacion: 'G. Representación', peaje: 'Peaje',
     parqueadero: 'Parqueadero', taxi: 'Taxi', otro: 'Otro',
   };
-  const pagoLabelsMap = { efectivo: 'Efectivo', tarjeta_debito: 'T. Débito', tarjeta_credito: 'T. Crédito' };
+  const pagoLabelsMap = MEDIO_PAGO_LABEL;
 
   sorted.forEach((exp, i) => {
     const r = i + 2;
@@ -541,10 +579,12 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
     ws2.getCell(r, 9).value = valor + iva;
     ws2.getCell(r, 9).numFmt = currencyFmt;
     ws2.getCell(r, 10).value = pagoLabelsMap[exp.medio_pago] || '';
-    ws2.getCell(r, 11).value = exp.ciudad || legalization.ciudades_visitadas || '';
-    for (let c = 1; c <= 11; c++) {
+    ws2.getCell(r, 11).value = PAGADO_POR_LABEL[pagadoPorDe(exp)];
+    if (pagadoPorDe(exp) !== 'personal') ws2.getCell(r, 11).font = { name: 'Arial', size: 9, bold: true, color: { argb: pagadoPorDe(exp) === 'empresa' ? 'B45309' : '6D28D9' } };
+    ws2.getCell(r, 12).value = exp.ciudad || legalization.ciudades_visitadas || '';
+    for (let c = 1; c <= 12; c++) {
       ws2.getCell(r, c).border = borderThin;
-      ws2.getCell(r, c).font = normalFont9;
+      if (c !== 11) ws2.getCell(r, c).font = normalFont9;
     }
   });
 
