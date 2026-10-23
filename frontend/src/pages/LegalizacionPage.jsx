@@ -4,6 +4,7 @@ import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI, authorizationAPI }
 import { useAuth } from '../context/AuthContext';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import FirmaModal from '../components/FirmaModal';
+import { PagadoPorBadge } from '../components/PagadoPor';
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -227,6 +228,7 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
                           <span className="text-xs font-bold text-colsein-600">{CAT_LABELS[exp.categoria] || exp.categoria}</span>
                           <span className="text-[10px] text-slate-400 ml-2">{dateStr(exp.fecha)}</span>
                           {exp.kilometrage_entry_id && <span className="ml-2 text-[9px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">🚕 Kilometraje</span>}
+                          <PagadoPorBadge value={exp.pagado_por} className="ml-2" />
                           <p className="text-xs text-slate-500 truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -276,6 +278,12 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
                   <span className="text-xs text-slate-500">Total gastos</span>
                   <span className="text-sm font-bold">{fmt(parseFloat(legalization.gasto_real_total || totalSelected))}</span>
                 </div>
+                {parseFloat(legalization.total_pagado_empresa || 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-xs text-amber-700">🏢 Pagado por la empresa (no se reembolsa)</span>
+                    <span className="text-xs font-bold text-amber-700">{fmt(parseFloat(legalization.total_pagado_empresa))}</span>
+                  </div>
+                )}
                 {parseFloat(legalization.valor_anticipo || 0) > 0 && (
                   <>
                     <div className="flex justify-between">
@@ -423,7 +431,7 @@ function EditarLegalizacionModal({ legalization, onClose, onSaved }) {
                   <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="w-4 h-4 accent-colsein-500" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-slate-700 truncate">{CAT_LABELS[e.categoria] || e.categoria} — {e.establecimiento || 'Sin nombre'}</p>
-                    <p className="text-[10px] text-slate-400">{e.fecha}{e.kilometrage_entry_id && <span className="ml-1.5 font-bold text-violet-700">🚕 Kilometraje</span>}</p>
+                    <p className="text-[10px] text-slate-400">{e.fecha}{e.kilometrage_entry_id && <span className="ml-1.5 font-bold text-violet-700">🚕 Kilometraje</span>} <PagadoPorBadge value={e.pagado_por} className="ml-1" /></p>
                   </div>
                   <span className="text-xs font-bold text-slate-700">{fmt(e.valor)}</span>
                 </label>
@@ -561,7 +569,10 @@ export default function LegalizacionPage() {
                     {leg.User?.nombre && <p className="text-[11px] text-slate-500 font-semibold">{leg.User.nombre}</p>}
                     {leg.TravelRequest && <p className="text-xs text-slate-400">{leg.TravelRequest.consecutivo} — {leg.TravelRequest.ciudad_destino}</p>}
                     {leg.ciudades_visitadas && <p className="text-xs text-slate-400">{leg.ciudades_visitadas}</p>}
-                    <p className="text-xs text-slate-400">{leg.expenses?.length || 0} gasto(s) · {leg.moneda || 'COP'}</p>
+                    <p className="text-xs text-slate-400">
+                      {leg.expenses?.length || 0} gasto(s) · {leg.moneda || 'COP'}
+                      {parseFloat(leg.total_pagado_empresa || 0) > 0 && <span className="ml-1.5 text-amber-700 font-semibold">· 🏢 empresa {fmt(parseFloat(leg.total_pagado_empresa))}</span>}
+                    </p>
                   </div>
                   <div className="text-right">
                     <StatusBadge status={leg.estado} />

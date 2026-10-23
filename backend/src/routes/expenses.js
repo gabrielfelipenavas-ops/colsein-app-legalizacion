@@ -4,10 +4,11 @@ const { auth, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const path = require('path');
 const { validarFechaGasto } = require('../utils/dates');
+const { recalculateLegalizationTotals } = require('../services/taxiExpenses');
 const { ROLES, REVISORES } = require('../roles');
 
 const CATEGORIAS_VALIDAS = ['alojamiento', 'alimentacion', 'transportes', 'imprevistos', 'representacion', 'peaje', 'parqueadero', 'taxi', 'otro'];
-const MEDIOS_PAGO_VALIDOS = ['efectivo', 'tarjeta_debito', 'tarjeta_credito'];
+const { MEDIOS_PAGO: MEDIOS_PAGO_VALIDOS, PAGADO_POR } = require('../services/pagos');
 
 // Convierte un valor de dinero recibido del formulario a número >= 0 (o null).
 // Acepta strings vacíos (multipart los manda como "") y los trata como vacío.
@@ -48,6 +49,9 @@ function buildExpenseData(body) {
 
   const mp = text(body.medio_pago);
   if (mp !== undefined && MEDIOS_PAGO_VALIDOS.includes(mp)) data.medio_pago = mp;
+  // ¿Quién pagó? personal (se reembolsa) · anticipo · empresa (no se reembolsa)
+  const pp = text(body.pagado_por);
+  if (pp !== undefined && PAGADO_POR.includes(pp)) data.pagado_por = pp;
 
   return data;
 }
@@ -345,7 +349,7 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     }
 
     const allowed = ['categoria', 'fecha', 'establecimiento', 'nit_establecimiento',
-      'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'numero_factura', 'cufe', 'observaciones'];
+      'direccion', 'valor', 'iva', 'impoconsumo', 'servicio', 'propina', 'medio_pago', 'pagado_por', 'numero_factura', 'cufe', 'observaciones'];
     const updates = {};
     for (const k of allowed) {
       if (req.body[k] !== undefined) {
@@ -354,6 +358,8 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
           : req.body[k];
       }
     }
+    if (updates.medio_pago !== undefined && !MEDIOS_PAGO_VALIDOS.includes(updates.medio_pago)) delete updates.medio_pago;
+    if (updates.pagado_por !== undefined && !PAGADO_POR.includes(updates.pagado_por)) delete updates.pagado_por;
 
     // Si se está cambiando la fecha, validar que sea razonable (ni futura ni muy antigua)
     if (updates.fecha !== undefined) {
@@ -378,6 +384,8 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     });
 
     await expense.update(updates);
+    // Si cambió el valor o quién pagó, los saldos de su legalización (en borrador) cambian
+    if (expense.legalization_id) await recalculateLegalizationTotals(expense.legalization_id);
     res.json(expense);
   } catch (err) {
     console.error('Update expense error:', err);

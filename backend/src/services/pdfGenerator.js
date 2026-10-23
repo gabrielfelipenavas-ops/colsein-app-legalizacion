@@ -51,6 +51,9 @@ const rubroDe = (categoria) => {
   return 'imprevistos'; // 'otro'
 };
 const valorLegalizable = (e) => parseFloat(e.valor_legalizable != null ? e.valor_legalizable : (e.valor || 0));
+const { pagadoPorDe, PAGADO_POR_LABEL, computeLegalizationTotals } = require('./pagos');
+// Marca corta de quién pagó, para el detalle de transporte: " · EMPRESA" / " · ANTICIPO"
+const sufijoPago = (e) => { const q = pagadoPorDe(e); return q === 'personal' ? '' : ` · ${PAGADO_POR_LABEL[q].toUpperCase()}`; };
 
 // Concepto del transporte tal como se imprime en el detalle: "TAXI CASA - AEROPUERTO"
 const conceptoTransporte = (e) => {
@@ -118,7 +121,9 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
     const v = valorLegalizable(e);
     matriz[k][e.fecha] = (matriz[k][e.fecha] || 0) + v;
     real[k] += v;
-    if (e.medio_pago === 'tarjeta_credito') tc[k] += v;
+    // Columna "TARJETA CRÉDITO" del formato oficial = lo que pagó directamente la
+    // empresa (tarjeta corporativa, cuenta Cabify/app): se relaciona, no se reembolsa.
+    if (pagadoPorDe(e) === 'empresa') tc[k] += v;
   });
   const programado = (r) => travelRequest ? parseFloat(travelRequest[r.dia] || 0) * (duracion || 0) : 0;
   const totalReal = RUBROS.reduce((s, r) => s + real[r.key], 0);
@@ -151,7 +156,7 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
 
   // ── Matriz de gastos por fecha ──
   const LABEL_W = 150;
-  const FIXED = [['TARJETA CRÉDITO', 70], ['GASTO PROGRAMADO', 80], ['GASTO REAL', 90]];
+  const FIXED = [['PAGÓ LA EMPRESA', 70], ['GASTO PROGRAMADO', 80], ['GASTO REAL', 90]];
   const FIXED_W = FIXED.reduce((s, f) => s + f[1], 0);
   const MAX_DATES = 8;
   // Más de 8 fechas no caben legibles en una fila: se reparten en bloques parejos
@@ -216,11 +221,17 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
   });
 
   // ── Anticipo y saldos ──
+  // Los saldos se recalculan aquí con la misma regla del servidor (services/pagos.js)
+  // para que el documento siempre cuadre con sus propias facturas.
   const anticipo = parseFloat(legalization.valor_anticipo || 0);
-  const favorEmpresa = parseFloat(legalization.pago_favor_empresa || 0);
-  const favorEmpleado = parseFloat(legalization.pago_favor_empleado || 0);
+  const tot = computeLegalizationTotals(sorted, anticipo);
+  const favorEmpresa = tot.pago_favor_empresa;
+  const favorEmpleado = tot.pago_favor_empleado;
   const VAL_W = FIXED[2][1];
   const resumen = [
+    ['GASTO REAL TOTAL', totalReal, false],
+    ['PAGADO POR LA EMPRESA (tarjeta corporativa / Cabify · no se reembolsa)', tot.total_pagado_empresa, false],
+    ['A CARGO DEL COLABORADOR (gasto real − pagado por la empresa)', tot.a_cargo_colaborador, false],
     ['VALOR ANTICIPO', anticipo, false],
     ['PAGO A FAVOR DE LA COMPAÑÍA', favorEmpresa, favorEmpresa > 0],
     ['PAGO A FAVOR DEL EMPLEADO', favorEmpleado, favorEmpleado > 0],
@@ -279,7 +290,7 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
   for (let i = 0; i < porBloque; i++) {
     if (y + RH > bottomLimit) { doc.addPage(); y = 28; drawTransportHeader(); }
     [izq[i], der[i]].forEach((e, g) => {
-      const vals = e ? [fmtFecha(e.fecha), conceptoTransporte(e), fmtMoney(valorLegalizable(e))] : ['', '', ''];
+      const vals = e ? [fmtFecha(e.fecha), conceptoTransporte(e) + sufijoPago(e), fmtMoney(valorLegalizable(e))] : ['', '', ''];
       let x = left + g * GW;
       tCols.forEach(([t, w], ci) => { cell(x, y, w, RH, vals[ci], { size: 6.5, align: ci === 2 ? 'right' : (ci === 0 ? 'center' : 'left') }); x += w; });
     });
@@ -326,7 +337,8 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
     { key: 'fecha', label: 'Fecha', w: 60, align: 'left' },
     { key: 'rubro', label: 'Rubro', w: 95, align: 'left' },
     { key: 'categoria', label: 'Categoría', w: 70, align: 'left' },
-    { key: 'establecimiento', label: 'Establecimiento / concepto · NIT', w: 271, align: 'left' },
+    { key: 'establecimiento', label: 'Establecimiento / concepto · NIT', w: 221, align: 'left' },
+    { key: 'pago', label: 'Pagó', w: 50, align: 'left' },
     { key: 'factura', label: 'N.º factura', w: 80, align: 'left' },
     { key: 'valor', label: 'Valor', w: 75, align: 'right' },
     { key: 'legalizable', label: 'V. legalizable', w: 75, align: 'right' },
@@ -351,6 +363,7 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
       rubro: rubro ? rubro.label : '',
       categoria: CATEGORIAS[e.categoria] || e.categoria,
       establecimiento: (estab || '—') + (e.kilometrage_entry_id ? ' (Kilometraje)' : ''),
+      pago: PAGADO_POR_LABEL[pagadoPorDe(e)].replace('Dinero propio', 'Propio'),
       factura: e.numero_factura || '—',
       valor: fmtCOP(e.valor),
       legalizable: fmtCOP(valorLegalizable(e)),
@@ -367,7 +380,10 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
   doc.moveTo(left, y).lineTo(left + W, y).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
   y += 8;
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#000')
-    .text(`Gasto real total: ${fmtCOP(totalReal)}   ·   Transporte (taxis, apps, peajes, parqueaderos): ${fmtCOP(totalTransporte)}`, left, y, { width: W, align: 'right' });
+    .text(`Gasto real total: ${fmtCOP(totalReal)}   ·   Pagado por la empresa: ${fmtCOP(tot.total_pagado_empresa)}   ·   Con anticipo: ${fmtCOP(tot.total_pagado_anticipo)}   ·   Transporte: ${fmtCOP(totalTransporte)}`, left, y, { width: W, align: 'right' });
+  y += 12;
+  doc.font('Helvetica').fontSize(7).fillColor(GRIS)
+    .text('Pagó: Propio = el colaborador con su dinero (se reembolsa) · Anticipo = con el anticipo girado (se cruza con el anticipo) · Empresa = tarjeta de crédito corporativa o cuenta Cabify/app de la empresa (se relaciona, no se reembolsa).', left, y, { width: W, align: 'right' });
 
   // ── Pie de página con numeración ──
   const range = doc.bufferedPageRange();

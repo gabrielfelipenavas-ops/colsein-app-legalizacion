@@ -3,6 +3,7 @@ import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as Imag
 import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import { PagadoPorBadge } from '../components/PagadoPor';
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -406,6 +407,12 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
             <p className="text-[10px] text-slate-500">Anticipo</p>
             <p className="text-sm font-bold">{fmt(parseFloat(legalizacion.valor_anticipo || 0))}</p>
           </div>
+          {parseFloat(legalizacion.total_pagado_empresa || 0) > 0 && (
+            <div className="bg-amber-50 rounded-xl p-3 col-span-2">
+              <p className="text-[10px] text-slate-500">🏢 Pagado por la empresa (tarjeta corporativa / Cabify) · se relaciona, no se reembolsa</p>
+              <p className="text-sm font-bold text-amber-800">{fmt(parseFloat(legalizacion.total_pagado_empresa))}</p>
+            </div>
+          )}
           {parseFloat(legalizacion.pago_favor_empresa || 0) > 0 && (
             <div className="bg-red-50 rounded-xl p-3 col-span-2">
               <p className="text-[10px] text-slate-500">Debe devolver a la empresa</p>
@@ -437,7 +444,7 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
                     {exp.categoria}
                     {exp.validado && <CheckCircle size={12} className="text-emerald-500" />}
                   </p>
-                  <p className="text-sm font-extrabold text-colsein-600">{fmt(parseFloat(exp.valor || 0))}</p>
+                  <p className="text-sm font-extrabold text-colsein-600 flex items-center gap-1.5"><PagadoPorBadge value={exp.pagado_por} always /> {fmt(parseFloat(exp.valor || 0))}</p>
                 </div>
                 <p className="text-[10px] text-slate-500">{dateStr(exp.fecha)} · {exp.establecimiento || 'Sin establecimiento'}</p>
                 {exp.nit_establecimiento && <p className="text-[10px] text-slate-400">NIT: {exp.nit_establecimiento}</p>}

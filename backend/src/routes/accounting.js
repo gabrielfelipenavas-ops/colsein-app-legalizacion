@@ -72,6 +72,7 @@ router.get('/legalizations/:year/:month', auth, requireRole(...CONTABLES), async
         id: e.id, fecha: e.fecha, categoria: e.categoria, establecimiento: e.establecimiento,
         numero_factura: e.numero_factura, valor: e.valor, iva: e.iva, impoconsumo: e.impoconsumo,
         servicio: e.servicio, propina: e.propina, valor_legalizable: e.valor_legalizable,
+        medio_pago: e.medio_pago, pagado_por: e.pagado_por || 'personal',
       })),
     }));
     const totalLineas = resumen.reduce((s, l) => s + l.gastos.length, 0);

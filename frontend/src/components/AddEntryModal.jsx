@@ -4,6 +4,7 @@ import { kmAPI, clientAPI, authorizationAPI } from '../services/api';
 import { fmt, fmtNum, TARIFAS, TIPOS_TAXI, requiereFacturaTaxi, requiereAutorizacionTaxi } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import MapKmPicker from './MapKmPicker';
+import { PagadoPorSelector } from './PagadoPor';
 
 function PhotoUpload({ label, value, onChange, required, colorClass = 'border-emerald-500' }) {
   const ref = useRef(null);
@@ -44,6 +45,7 @@ export default function AddEntryModal({ onClose, onSaved }) {
     fecha: new Date().toISOString().split('T')[0], cliente_nombre: '', medio: 'CARRO',
     km_inicial: '', km_final: '', peajes: '', parqueaderos: '', taxis: '',
     taxi_tipo: '', taxi_origen: '', taxi_destino: '', otros: '',
+    pagado_por: 'personal', // quién pagó los apoyos (peajes, parqueadero, taxi, otros)
   });
   const [photos, setPhotos] = useState({ peaje: null, parqueadero: null, taxi: null, otros: null });
   const [search, setSearch] = useState('');
@@ -339,6 +341,23 @@ export default function AddEntryModal({ onClose, onSaved }) {
           <div className={otrosVal > 0 ? 'mb-2.5' : ''}><label className="label-field">Valor ($)</label><input type="number" placeholder="0" value={form.otros} onChange={e => u('otros', e.target.value)} className="input-field font-mono" /></div>
           {otrosVal > 0 && <PhotoUpload label="📸 Foto del soporte" value={photos.otros} onChange={f => setPhotos(p => ({...p, otros: f}))} required={!photos.otros} />}
         </div>
+
+        {/* ── ¿QUIÉN PAGÓ LOS APOYOS? ── (el kilometraje km × tarifa siempre se paga al colaborador) */}
+        {hayGastos && (
+          <div className={`mb-3.5 p-3.5 rounded-xl border-[1.5px] ${form.pagado_por === 'empresa' ? 'bg-amber-50/60 border-amber-300' : form.pagado_por === 'anticipo' ? 'bg-violet-50/60 border-violet-300' : 'bg-emerald-50/60 border-emerald-300'}`}>
+            <PagadoPorSelector
+              value={form.pagado_por}
+              onChange={v => u('pagado_por', v)}
+              label="¿Quién pagó los peajes, parqueaderos, taxis u otros de este día?"
+            />
+            {form.pagado_por !== 'personal' && (
+              <p className="mt-2 text-[10px] text-slate-600 leading-relaxed">
+                Estos apoyos quedan relacionados en el reporte de kilometraje pero <strong>no se suman al valor a pagar</strong>.
+                {form.pagado_por === 'anticipo' && ' Inclúyelos en la legalización del viaje para cruzarlos con el anticipo.'}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Warnings */}
         {faltantes.length > 0 && (

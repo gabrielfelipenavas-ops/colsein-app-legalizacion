@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, FileText, CheckCircle, Edit, PlusCircle, Save, X, Trash2, DollarSign, AlertTriangle, Mail, Search, Link2, ChevronDown, ChevronUp, Download, Unlink, ExternalLink, Eye, Image as ImageIcon } from 'lucide-react';
 import { expenseAPI, emailAPI, establishmentAPI } from '../services/api';
-import { fmt, validarFechaGasto } from '../utils/helpers';
+import { fmt, validarFechaGasto, MEDIOS_PAGO } from '../utils/helpers';
 import SoporteViewer from '../components/SoporteViewer';
+import { PagadoPorSelector, PagadoPorBadge } from '../components/PagadoPor';
 
 const CATEGORIAS = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -18,11 +19,6 @@ const CATEGORIAS = [
 
 const CAT_LABELS = Object.fromEntries(CATEGORIAS.map(c => [c.value, c.label]));
 
-const MEDIOS_PAGO = [
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'tarjeta_debito', label: 'Tarjeta Débito' },
-  { value: 'tarjeta_credito', label: 'Tarjeta Crédito' },
-];
 
 const emptyForm = {
   categoria: 'alimentacion',
@@ -35,6 +31,7 @@ const emptyForm = {
   impoconsumo: '',
   servicio: '',
   propina: '',
+  pagado_por: 'personal',
   medio_pago: 'efectivo',
   numero_factura: '',
   cufe: '',
@@ -400,6 +397,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
     impoconsumo: Number(expense.impoconsumo) ? expense.impoconsumo : '',
     servicio: Number(expense.servicio) ? expense.servicio : '',
     propina: Number(expense.propina) ? expense.propina : '',
+    pagado_por: expense.pagado_por || 'personal',
     medio_pago: expense.medio_pago || 'efectivo',
     numero_factura: expense.numero_factura || '',
     cufe: expense.cufe || '',
@@ -685,12 +683,13 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                   <p className="text-[10px] text-amber-600 leading-relaxed">La propina no se reconoce; el servicio se reconoce hasta el 10%. El IVA y el impuesto al consumo sí cuentan.</p>
                 </div>
               ) : null}
+              <PagadoPorSelector value={form.pagado_por} onChange={v => set('pagado_por', v)} />
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
-                <div className="flex gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
                   {MEDIOS_PAGO.map(m => (
                     <button key={m.value} onClick={() => set('medio_pago', m.value)}
-                      className={`flex-1 py-2 rounded-xl text-[11px] font-bold border ${form.medio_pago === m.value ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
+                      className={`py-2 rounded-xl text-[11px] font-bold border ${form.medio_pago === m.value ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
                       {m.label}
                     </button>
                   ))}
@@ -721,6 +720,7 @@ function ExpenseDetailModal({ expense, onClose, onSaved, initialEdit = false }) 
                 ...(Number(expense.propina) ? [['Propina (no se reconoce)', fmt(expense.propina)]] : []),
                 ...(expense.valor_legalizable != null && Number(expense.valor_legalizable) !== Number(expense.valor)
                   ? [['Valor que se legaliza', fmt(expense.valor_legalizable)]] : []),
+                ['Quién pagó', <PagadoPorBadge value={expense.pagado_por} always />],
                 ['Medio de Pago', MEDIOS_PAGO.find(m => m.value === expense.medio_pago)?.label || expense.medio_pago],
                 ['CUFE', expense.cufe || '—'],
               ].map(([label, value]) => (
@@ -1146,12 +1146,13 @@ export default function FacturasPage() {
               </div>
             )}
 
+            <PagadoPorSelector value={form.pagado_por} onChange={v => set('pagado_por', v)} />
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 {MEDIOS_PAGO.map(m => (
                   <button key={m.value} onClick={() => set('medio_pago', m.value)}
-                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-all ${form.medio_pago === m.value ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
+                    className={`py-2 rounded-xl text-[11px] font-bold border transition-all ${form.medio_pago === m.value ? 'bg-colsein-500 text-white border-colsein-500' : 'bg-white text-slate-600 border-slate-200'}`}>
                     {m.label}
                   </button>
                 ))}
@@ -1248,7 +1249,7 @@ export default function FacturasPage() {
                       )}
                     </div>
                     <p className="text-xs text-slate-700 font-semibold truncate">{exp.establecimiento || 'Sin establecimiento'}</p>
-                    <p className="text-sm font-extrabold text-slate-800">{fmt(exp.valor)}</p>
+                    <p className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">{fmt(exp.valor)} <PagadoPorBadge value={exp.pagado_por} /></p>
                   </div>
                 </div>
                 <div className="flex gap-2">
