@@ -75,7 +75,9 @@ const SOPORTES_POR_PAGINA = 3;
 // Lee y normaliza la foto de un gasto para pdfkit (que solo acepta JPEG/PNG):
 // corrige la orientación EXIF del celular, convierte HEIC/WEBP/GIF/BMP y
 // reduce fotos enormes para que el PDF no pese demasiado.
-async function prepararSoporte(exp, uploadDir) {
+// tam: 'miniatura' (anexo de 3 por página) u 'original' (una factura por página,
+// a tamaño completo para poder leer cada renglón del comprobante).
+async function prepararSoporte(exp, uploadDir, tam = 'miniatura') {
   if (!exp.imagen_url) {
     return { texto: exp.observaciones?.includes('[SIN SOPORTE') ? 'Sin soporte: ver justificación en observaciones' : 'Sin soporte adjunto' };
   }
@@ -86,12 +88,14 @@ async function prepararSoporte(exp, uploadDir) {
   if (ext === '.pdf') return { texto: `Soporte en PDF: ${path.basename(ruta)}\n(se adjunta en la descarga de "Facturas")` };
   try {
     const sharp = require('sharp');
+    const dim = tam === 'original' ? { width: 2400, height: 3200, quality: 90 } : { width: 1400, height: 1800, quality: 82 };
     const buffer = await sharp(ruta)
       .rotate() // aplica la orientación EXIF (fotos tomadas en vertical con el celular)
-      .resize({ width: 1400, height: 1800, fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 82 })
+      .resize({ width: dim.width, height: dim.height, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: dim.quality })
       .toBuffer();
-    return { buffer };
+    const meta = await sharp(buffer).metadata();
+    return { buffer, vertical: (meta.height || 0) > (meta.width || 0) };
   } catch (err) {
     console.error(`[pdfGenerator] No se pudo leer el soporte del gasto ${exp.id} (${ruta}):`, err.message);
     return { texto: `No se pudo leer la imagen (${ext.replace('.', '').toUpperCase() || 'formato desconocido'})` };
@@ -147,6 +151,32 @@ async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }
       }
     }
   }
+
+  // ── Facturas originales: una por página, a tamaño completo ──
+  // El anexo anterior sirve para ubicar cada comprobante; este permite leer
+  // cada renglón de la factura (NIT, resolución, IVA, propina) sin lupa.
+  const conFoto = sorted.map((e, idx) => ({ e, idx })).filter(({ e }) => e.imagen_url && !String(e.imagen_url).toLowerCase().endsWith('.pdf'));
+  let n = 0;
+  for (const { e, idx } of conFoto) {
+    const sop = await prepararSoporte(e, uploadDir, 'original');
+    if (!sop.buffer) continue; // sin archivo en el servidor: ya quedó el aviso en el anexo anterior
+    n += 1;
+    // Las fotos verticales (la mayoría de los recibos) van en hoja vertical
+    // para aprovechar toda la página; las apaisadas, en hoja horizontal.
+    doc.addPage({ layout: sop.vertical ? 'portrait' : 'landscape' });
+    const pw = doc.page.width - 56;
+    const pb = doc.page.height - 48;
+    doc.font('Helvetica-Bold').fontSize(sop.vertical ? 9.5 : 11).fillColor(AZUL)
+      .text(`ANEXO — FACTURA ORIGINAL · Legalización N.º ${legalization.id} · comprobante #${idx + 1} de ${sorted.length}`, left, 28, { width: pw, lineBreak: false, ellipsis: true });
+    const estab = [e.establecimiento, e.nit_establecimiento ? `NIT ${e.nit_establecimiento}` : null].filter(Boolean).join(' · ');
+    doc.font('Helvetica').fontSize(8).fillColor('#334155')
+      .text(`${fmtFecha(e.fecha)} · ${CATEGORIAS[e.categoria] || e.categoria} · ${estab || '—'}${e.numero_factura ? ` · Fact. ${e.numero_factura}` : ''} · ${fmtCOP(e.valor)}`, left, 44, { width: pw, lineBreak: false, ellipsis: true });
+    const iy = 60;
+    const ih = pb - iy;
+    doc.lineWidth(0.5).strokeColor('#CBD5E1').rect(left, iy, pw, ih).stroke();
+    doc.image(sop.buffer, left + 3, iy + 3, { fit: [pw - 6, ih - 6], align: 'center', valign: 'center' });
+  }
+  if (n) console.log(`[pdfGenerator] Legalización ${legalization.id}: ${n} factura(s) original(es) a página completa`);
 }
 
 // Genera el PDF de una legalización de gastos en el formato oficial de COLSEIN
@@ -482,7 +512,7 @@ async function generateLegalizationPdf(legalization, expenses, user, travelReque
     doc.page.margins.bottom = 0;
     doc.font('Helvetica').fontSize(7).fillColor(GRIS)
       .text(`Generado por la App de Legalizaciones COLSEIN · ${fmtFecha(new Date())} · Página ${i + 1} de ${range.count}`,
-        left, doc.page.height - 28, { width: W, align: 'center', lineBreak: false });
+        left, doc.page.height - 28, { width: doc.page.width - 56, align: 'center', lineBreak: false });
     doc.page.margins.bottom = oldBottom;
   }
 
