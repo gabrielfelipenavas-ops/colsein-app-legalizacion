@@ -63,12 +63,96 @@ const conceptoTransporte = (e) => {
   return `${cat} ${est}`.toUpperCase();
 };
 
+// ── Anexo de soportes: fotos de los comprobantes dentro del PDF ──
+// Para imprimir la legalización completa sin buscar las fotos aparte. Cada
+// comprobante va en un recuadro con su número (el mismo del anexo de facturas),
+// fecha, categoría, establecimiento, valor y N.º de factura. Tres por página.
+const SOPORTES_POR_PAGINA = 3;
+
+// Lee y normaliza la foto de un gasto para pdfkit (que solo acepta JPEG/PNG):
+// corrige la orientación EXIF del celular, convierte HEIC/WEBP/GIF/BMP y
+// reduce fotos enormes para que el PDF no pese demasiado.
+async function prepararSoporte(exp, uploadDir) {
+  if (!exp.imagen_url) {
+    return { texto: exp.observaciones?.includes('[SIN SOPORTE') ? 'Sin soporte: ver justificación en observaciones' : 'Sin soporte adjunto' };
+  }
+  if (!exp.imagen_url.startsWith('/uploads/')) return { texto: `Soporte externo: ${exp.imagen_url}` };
+  const ruta = path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''));
+  if (!fs.existsSync(ruta)) return { texto: 'Imagen no disponible en el servidor (vuelve a subir el soporte)' };
+  const ext = path.extname(ruta).toLowerCase();
+  if (ext === '.pdf') return { texto: `Soporte en PDF: ${path.basename(ruta)}\n(se adjunta en la descarga de "Facturas")` };
+  try {
+    const sharp = require('sharp');
+    const buffer = await sharp(ruta)
+      .rotate() // aplica la orientación EXIF (fotos tomadas en vertical con el celular)
+      .resize({ width: 1400, height: 1800, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    return { buffer };
+  } catch (err) {
+    console.error(`[pdfGenerator] No se pudo leer el soporte del gasto ${exp.id} (${ruta}):`, err.message);
+    return { texto: `No se pudo leer la imagen (${ext.replace('.', '').toUpperCase() || 'formato desconocido'})` };
+  }
+}
+
+async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }) {
+  if (!sorted.length) return;
+  const uploadDir = process.env.UPLOAD_DIR || './uploads';
+  const soportes = [];
+  for (const e of sorted) soportes.push(await prepararSoporte(e, uploadDir));
+
+  const GAP = 10;
+  const BOX_W = (W - GAP * (SOPORTES_POR_PAGINA - 1)) / SOPORTES_POR_PAGINA;
+  const CAP_H = 34;
+  const TOP = 28 + 22;
+  const BOX_H = bottomLimit - TOP;
+  const IMG_PAD = 4;
+
+  for (let i = 0; i < sorted.length; i += SOPORTES_POR_PAGINA) {
+    doc.addPage();
+    const pag = Math.floor(i / SOPORTES_POR_PAGINA) + 1;
+    const totalPag = Math.ceil(sorted.length / SOPORTES_POR_PAGINA);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(AZUL)
+      .text(`ANEXO — SOPORTES (FOTOS DE LOS COMPROBANTES) · Legalización N.º ${legalization.id} · ${pag}/${totalPag}`, left, 28, { width: W, lineBreak: false });
+
+    for (let k = 0; k < SOPORTES_POR_PAGINA && i + k < sorted.length; k++) {
+      const e = sorted[i + k];
+      const sop = soportes[i + k];
+      const x = left + k * (BOX_W + GAP);
+      const y = TOP;
+
+      // Marco del comprobante
+      doc.lineWidth(0.5).strokeColor('#94A3B8').rect(x, y, BOX_W, BOX_H).stroke();
+
+      // Encabezado: número, fecha, categoría, establecimiento, valor, factura
+      doc.rect(x, y, BOX_W, CAP_H).fill(GRIS_FILL);
+      const estab = [e.establecimiento, e.nit_establecimiento ? `NIT ${e.nit_establecimiento}` : null].filter(Boolean).join(' · ');
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000')
+        .text(`#${i + k + 1} · ${fmtFecha(e.fecha)} · ${CATEGORIAS[e.categoria] || e.categoria} · ${fmtCOP(e.valor)}`, x + 5, y + 5, { width: BOX_W - 10, lineBreak: false, ellipsis: true });
+      doc.font('Helvetica').fontSize(7).fillColor('#334155')
+        .text(`${estab || '—'}${e.numero_factura ? ` · Fact. ${e.numero_factura}` : ''}${e.kilometrage_entry_id ? ' · Kilometraje' : ''}`, x + 5, y + 17, { width: BOX_W - 10, lineBreak: false, ellipsis: true });
+      doc.moveTo(x, y + CAP_H).lineTo(x + BOX_W, y + CAP_H).lineWidth(0.5).strokeColor('#94A3B8').stroke();
+
+      // Imagen ajustada al recuadro (sin deformar) o mensaje
+      const ix = x + IMG_PAD, iy = y + CAP_H + IMG_PAD;
+      const iw = BOX_W - IMG_PAD * 2, ih = BOX_H - CAP_H - IMG_PAD * 2;
+      if (sop.buffer) {
+        doc.image(sop.buffer, ix, iy, { fit: [iw, ih], align: 'center', valign: 'center' });
+      } else {
+        doc.font('Helvetica-Oblique').fontSize(8).fillColor(GRIS)
+          .text(sop.texto, ix, iy + ih / 2 - 10, { width: iw, align: 'center' });
+      }
+    }
+  }
+}
+
 // Genera el PDF de una legalización de gastos en el formato oficial de COLSEIN
 // (matriz por fechas, detalle de transporte, firmas) con la firma manuscrita
 // del colaborador si la registró. Devuelve el PDFDocument SIN finalizar: el
-// llamador debe hacer doc.pipe(destino) y luego doc.end().
+// llamador debe hacer doc.pipe(destino) y luego doc.end(). Es async porque el
+// anexo de soportes convierte las fotos (HEIC, WEBP, EXIF) con sharp.
 // opts: { revisor, aprobador } — usuarios (nombre) para las líneas de firma.
-function generateLegalizationPdf(legalization, expenses, user, travelRequest, opts = {}) {
+async function generateLegalizationPdf(legalization, expenses, user, travelRequest, opts = {}) {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margins: { top: 28, bottom: 40, left: 28, right: 28 }, bufferPages: true });
   const left = 28;
   const W = doc.page.width - 56; // 786pt útiles
@@ -368,6 +452,9 @@ function generateLegalizationPdf(legalization, expenses, user, travelRequest, op
   y += 8;
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#000')
     .text(`Gasto real total: ${fmtCOP(totalReal)}   ·   Transporte (taxis, apps, peajes, parqueaderos): ${fmtCOP(totalTransporte)}`, left, y, { width: W, align: 'right' });
+
+  // ── Anexo: fotos de los comprobantes (una o más páginas) ──
+  await anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit });
 
   // ── Pie de página con numeración ──
   const range = doc.bufferedPageRange();
