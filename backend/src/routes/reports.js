@@ -101,7 +101,7 @@ router.get('/legalizacion/:id/pdf', auth, async (req, res) => {
     const filename = `Legalizacion_Gastos_${leg.User.nombre.replace(/\s/g, '_')}_${leg.id}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    const doc = generateLegalizationPdf(leg, leg.expenses, leg.User, leg.TravelRequest, { revisor, aprobador });
+    const doc = await generateLegalizationPdf(leg, leg.expenses, leg.User, leg.TravelRequest, { revisor, aprobador });
     doc.pipe(res);
     doc.end();
   } catch (err) {
