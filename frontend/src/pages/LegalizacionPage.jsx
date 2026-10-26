@@ -1,9 +1,26 @@
-import { useState, useEffect } from 'react';
-import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save, Unlock } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, FileText, DollarSign, Send, X, Download, CheckCircle, Shield, Calendar, Clock, Edit, Save, Unlock, Eye } from 'lucide-react';
 import { legalizationAPI, expenseAPI, anticipoAPI, reportAPI, authorizationAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { fmt, dateStr, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import FirmaModal from '../components/FirmaModal';
+import PdfViewer from '../components/PdfViewer';
+
+// Vista previa del PDF de una legalización dentro de la app (sin descargar ni
+// salir de la app). En borrador el documento sale con la marca "BORRADOR".
+function VistaPreviaLegalizacion({ leg, onClose }) {
+  const fetchBlob = useCallback(() => reportAPI.downloadLegalizacionPdf(leg.id).then(r => r.data), [leg.id]);
+  const esBorrador = ['borrador', 'rechazado'].includes(leg.estado);
+  return (
+    <PdfViewer
+      title={`Legalización N.º ${leg.id}`}
+      subtitle={esBorrador ? 'BORRADOR · vista previa, aún no enviada' : `Estado: ${ESTADOS_LABEL[leg.estado] || leg.estado}`}
+      fetchBlob={fetchBlob}
+      filename={`Legalizacion_${leg.id}${esBorrador ? '_borrador' : ''}.pdf`}
+      onClose={onClose}
+    />
+  );
+}
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -30,6 +47,7 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
   const [legalization, setLegalization] = useState(null);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [preview, setPreview] = useState(false); // vista previa del PDF recién creado
 
   useEffect(() => {
     anticipoAPI.list().then(r => setAnticipos(r.data.filter(a => ['aprobado', 'anticipo_girado'].includes(a.estado)))).catch(() => {});
@@ -300,6 +318,10 @@ function NuevaLegalizacionModal({ onClose, onSaved }) {
             </div>
 
             <div className="space-y-2">
+              <button onClick={() => setPreview(true)} className="btn-outline w-full !border-colsein-500 !text-colsein-600">
+                <Eye size={16} /> Ver borrador del PDF
+              </button>
+              {preview && <VistaPreviaLegalizacion leg={legalization} onClose={() => setPreview(false)} />}
               <button onClick={handleDownload} disabled={downloading} className="btn-outline w-full">
                 <Download size={16} /> {downloading ? 'Descargando...' : 'Descargar Excel'}
               </button>
@@ -451,6 +473,7 @@ export default function LegalizacionPage() {
   const [editingLeg, setEditingLeg] = useState(null);
   // Registro de firma antes de descargar el PDF (si el usuario aún no la tiene)
   const [firmaParaPdf, setFirmaParaPdf] = useState(null); // legId pendiente de descargar tras firmar
+  const [previewLeg, setPreviewLeg] = useState(null); // legalización abierta en vista previa
 
   const load = () => { legalizationAPI.list().then(r => setLegalizations(r.data)).catch(() => {}); };
   useEffect(load, []);
@@ -582,6 +605,9 @@ export default function LegalizacionPage() {
                           <Unlock size={11} /> Solicitar modificación
                         </button>
                       )}
+                      <button onClick={() => setPreviewLeg(leg)} className="text-[10px] text-white bg-slate-700 hover:bg-slate-800 rounded-lg px-2 py-1 font-semibold flex items-center gap-1">
+                        <Eye size={11} /> {['borrador', 'rechazado'].includes(leg.estado) ? 'Ver borrador' : 'Ver PDF'}
+                      </button>
                       <button onClick={() => downloadLeg(leg.id)} className="text-[10px] text-colsein-500 font-semibold flex items-center gap-1">
                         <Download size={11} /> Excel
                       </button>
@@ -602,6 +628,7 @@ export default function LegalizacionPage() {
 
       {showNew && <NuevaLegalizacionModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
       {editingLeg && <EditarLegalizacionModal legalization={editingLeg} onClose={() => setEditingLeg(null)} onSaved={() => { setEditingLeg(null); load(); }} />}
+      {previewLeg && <VistaPreviaLegalizacion leg={previewLeg} onClose={() => setPreviewLeg(null)} />}
       {firmaParaPdf && (
         <FirmaModal
           onClose={() => setFirmaParaPdf(null)}

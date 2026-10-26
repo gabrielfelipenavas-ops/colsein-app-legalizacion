@@ -497,6 +497,16 @@ async function generateLegalizationPdf(legalization, expenses, user, travelReque
     doc.font('Helvetica').fontSize(7).fillColor(GRIS)
       .text(`Generado por la App de Legalizaciones COLSEIN · ${fmtFecha(new Date())} · Página ${i + 1} de ${range.count}`,
         left, doc.page.height - 28, { width: doc.page.width - 56, align: 'center', lineBreak: false });
+    // Marca de agua mientras la legalización no se haya enviado: así una vista
+    // previa impresa no se confunde con el documento definitivo.
+    if (['borrador', 'rechazado'].includes(legalization.estado)) {
+      const cx = doc.page.width / 2, cy = doc.page.height / 2;
+      doc.save();
+      doc.rotate(-30, { origin: [cx, cy] });
+      doc.font('Helvetica-Bold').fontSize(Math.round(doc.page.width / 7)).fillColor('#94A3B8').fillOpacity(0.16)
+        .text('BORRADOR', cx - doc.page.width, cy - doc.page.width / 14, { width: doc.page.width * 2, align: 'center', lineBreak: false });
+      doc.restore();
+    }
     doc.page.margins.bottom = oldBottom;
   }
 
