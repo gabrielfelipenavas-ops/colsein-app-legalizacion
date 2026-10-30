@@ -58,6 +58,25 @@ export const monthName = (m) =>
 
 export const TARIFAS = { CARRO: 600.65, MOTO: 507.03 };
 
+// ¿Quién pagó el gasto? (misma regla que el servidor: backend/src/services/pagos.js)
+//   personal → el colaborador con su dinero: la empresa se lo reembolsa.
+//   anticipo → con el anticipo que ya le giraron: se cruza con el anticipo.
+//   empresa  → la empresa directamente (tarjeta de crédito corporativa, cuenta
+//              Cabify/app de la empresa): se relaciona pero NO se reembolsa.
+export const PAGADO_POR = [
+  { value: 'personal', label: 'Dinero propio', short: 'Propio', desc: 'Lo pagué yo: me lo reembolsan', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  { value: 'anticipo', label: 'Anticipo', short: 'Anticipo', desc: 'Con el anticipo que me giraron', color: 'bg-violet-100 text-violet-800 border-violet-300' },
+  { value: 'empresa', label: 'Empresa', short: 'Empresa', desc: 'Tarjeta corporativa o cuenta Cabify/app de la empresa: no se reembolsa', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+];
+export const pagadoPorInfo = (v) => PAGADO_POR.find(p => p.value === v) || PAGADO_POR[0];
+
+export const MEDIOS_PAGO = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'tarjeta_debito', label: 'Tarjeta Débito' },
+  { value: 'tarjeta_credito', label: 'Tarjeta Crédito' },
+  { value: 'cuenta_empresa', label: 'Cuenta empresa (Cabify / app)' },
+];
+
 export const TIPOS_TAXI = ['Taxi convencional', 'Uber', 'InDriver', 'DiDi', 'Beat', 'Cabify', 'Bus / Transmilenio', 'Otro transporte'];
 
 // Apps de transporte que SÍ requieren factura/soporte obligatorio.

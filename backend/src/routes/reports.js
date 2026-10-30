@@ -215,16 +215,17 @@ router.get('/dashboard', auth, async (req, res) => {
         fecha: { [Op.between]: [`${anio}-01-01`, `${anio}-12-31`] },
         [Op.not]: { kilometrage_entry_id: { [Op.ne]: null }, legalization_id: null },
       },
-      attributes: ['fecha', 'valor', 'valor_legalizable'],
+      attributes: ['fecha', 'valor', 'valor_legalizable', 'pagado_por'],
     });
     const meses = {};
-    const mesDe = (m) => (meses[m] = meses[m] || { mes: m, anio, kilometraje: 0, facturas: 0, num_facturas: 0 });
+    const mesDe = (m) => (meses[m] = meses[m] || { mes: m, anio, kilometraje: 0, facturas: 0, facturas_empresa: 0, num_facturas: 0 });
     for (const r of yearReports) mesDe(r.periodo_mes).kilometraje += parseFloat(r.valor_total || 0);
     for (const e of yearExpenses) {
       const m = parseInt(String(e.fecha).slice(5, 7), 10);
       const v = e.valor_legalizable != null ? parseFloat(e.valor_legalizable) : parseFloat(e.valor || 0);
       const row = mesDe(m);
       row.facturas += v;
+      if (e.pagado_por === 'empresa') row.facturas_empresa += v; // lo pagó la empresa: no se reembolsa
       row.num_facturas += 1;
     }
     const monthlyTotals = Object.values(meses)
@@ -232,7 +233,7 @@ router.get('/dashboard', auth, async (req, res) => {
       .filter(r => r.total > 0 || r.mes === mes)
       .sort((a, b) => b.mes - a.mes);
     const currentMonthTotal = monthlyTotals.find(r => r.mes === mes)
-      || { mes, anio, kilometraje: 0, facturas: 0, num_facturas: 0, total: 0 };
+      || { mes, anio, kilometraje: 0, facturas: 0, facturas_empresa: 0, num_facturas: 0, total: 0 };
 
     res.json({
       monthly_totals: monthlyTotals,

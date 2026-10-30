@@ -55,6 +55,7 @@ cd frontend && npm run build
 - No se reconoce km para ir a oficinas de Colsein
 - Anticipos se legalizan máximo 3 días después del retorno
 - Recibos de parqueadero necesitan: fecha, nombre, NIT, régimen, dirección, resolución facturación, valor
+- Cada gasto (y cada registro de kilometraje con apoyos) lleva `pagado_por` (ver `services/pagos.js`): `personal` = lo pagó el colaborador y se le reembolsa; `anticipo` = lo pagó con el anticipo girado y se cruza con él; `empresa` = lo pagó la empresa (tarjeta de crédito corporativa o cuenta Cabify/app, medio_pago `cuenta_empresa`) y se relaciona pero NO se reembolsa ni se cruza con el anticipo. Saldos de la legalización: a cargo del colaborador = gasto real − pagado por empresa; saldo = a cargo − anticipo. En el reporte de kilometraje, los apoyos pagados por empresa o con anticipo se relacionan pero no suman al VALOR A PAGAR (`total_pagado_empresa`, `total_pagado_anticipo`). En PDF/Excel la columna del formato "TARJETA CRÉDITO" se rotula "PAGÓ LA EMPRESA"
 
 ## Flujo de aprobaciones
 Vendedor envía → Líder Regional revisa → Gerente Ventas aprueba → Control Interno audita

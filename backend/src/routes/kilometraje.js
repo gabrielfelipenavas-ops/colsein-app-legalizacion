@@ -6,6 +6,7 @@ const upload = require('../middleware/upload');
 const { notify, notifyRoles } = require('../services/notifications');
 const { ROLES, GERENTES, VISORES, APROBADORES, puedeAprobar, aprobadoresDe } = require('../roles');
 const { syncTaxiExpense, removeTaxiExpense, recalculateKmReport } = require('../services/taxiExpenses');
+const { PAGADO_POR } = require('../services/pagos');
 
 // GET /api/kilometraje/reports — list user's reports
 router.get('/reports', auth, async (req, res) => {
@@ -53,7 +54,7 @@ router.post('/entries', auth, [
   body('km_final').isNumeric(),
 ], async (req, res) => {
   try {
-    const { fecha, cliente_nombre, client_id, medio, km_inicial, km_final, peajes, parqueaderos, taxis, taxi_tipo, taxi_origen, taxi_destino, otros, origen_lat, origen_lng, destino_lat, destino_lng, distancia_api } = req.body;
+    const { fecha, cliente_nombre, client_id, medio, km_inicial, km_final, peajes, parqueaderos, taxis, taxi_tipo, taxi_origen, taxi_destino, otros, pagado_por, origen_lat, origen_lng, destino_lat, destino_lng, distancia_api } = req.body;
 
     const d = new Date(fecha);
     const mes = d.getMonth() + 1;
@@ -107,6 +108,8 @@ router.post('/entries', auth, [
       taxi_origen: taxi_origen || null,
       taxi_destino: taxi_destino || null,
       otros: parseFloat(otros || 0),
+      // ¿Quién pagó los apoyos (peajes, parqueadero, taxi, otros)? Por defecto el colaborador.
+      pagado_por: PAGADO_POR.includes(pagado_por) ? pagado_por : 'personal',
       origen_lat, origen_lng, destino_lat, destino_lng, distancia_api,
     });
 
@@ -139,11 +142,12 @@ router.put('/entries/:id', auth, async (req, res) => {
     // Lista blanca de campos editables (evita que el usuario fije valor_km, total_km,
     // user_id, report_id, etc. directamente y se salte el cálculo por tarifa).
     const editables = ['fecha', 'cliente_nombre', 'client_id', 'medio', 'km_inicial', 'km_final',
-      'peajes', 'parqueaderos', 'taxis', 'taxi_tipo', 'taxi_origen', 'taxi_destino', 'otros'];
+      'peajes', 'parqueaderos', 'taxis', 'taxi_tipo', 'taxi_origen', 'taxi_destino', 'otros', 'pagado_por'];
     const updates = {};
     for (const k of editables) {
       if (req.body[k] !== undefined) updates[k] = req.body[k];
     }
+    if (updates.pagado_por !== undefined && !PAGADO_POR.includes(updates.pagado_por)) delete updates.pagado_por;
 
     // Validar montos no negativos
     for (const campo of ['peajes', 'parqueaderos', 'taxis', 'otros']) {

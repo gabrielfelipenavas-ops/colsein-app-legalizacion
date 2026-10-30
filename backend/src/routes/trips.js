@@ -267,19 +267,9 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
-// Recalcula los totales de un reporte sumando sus entradas
-async function recalcReport(reportId) {
-  const entries = await db.KilometrageEntry.findAll({ where: { report_id: reportId } });
-  const totals = entries.reduce((acc, e) => ({
-    total_km: acc.total_km + parseFloat(e.total_km || 0),
-    total_valor_km: acc.total_valor_km + parseFloat(e.valor_km || 0),
-    total_peajes: acc.total_peajes + parseFloat(e.peajes || 0),
-    total_parqueaderos: acc.total_parqueaderos + parseFloat(e.parqueaderos || 0),
-    total_taxis: acc.total_taxis + parseFloat(e.taxis || 0),
-    total_otros: acc.total_otros + parseFloat(e.otros || 0),
-  }), { total_km: 0, total_valor_km: 0, total_peajes: 0, total_parqueaderos: 0, total_taxis: 0, total_otros: 0 });
-  totals.valor_total = totals.total_valor_km + totals.total_peajes + totals.total_parqueaderos + totals.total_taxis + totals.total_otros;
-  await db.KilometrageReport.update(totals, { where: { id: reportId } });
-}
+// Recalcula los totales de un reporte: misma regla que Kilometraje (ver
+// services/taxiExpenses.js): excluye los taxis ya legalizados y los apoyos
+// pagados por la empresa o con anticipo.
+const { recalculateKmReport: recalcReport } = require('../services/taxiExpenses');
 
 module.exports = router;

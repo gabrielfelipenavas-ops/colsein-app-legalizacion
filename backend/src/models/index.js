@@ -84,6 +84,10 @@ const KilometrageReport = sequelize.define('KilometrageReport', {
   total_parqueaderos: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   total_taxis: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   total_otros: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+  // Apoyos (peajes, parqueaderos, taxis, otros) que NO se pagan por este reporte:
+  // los pagó la empresa (tarjeta corporativa / Cabify) o se pagaron con anticipo.
+  total_pagado_empresa: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+  total_pagado_anticipo: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   valor_total: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   observaciones: Sequelize.TEXT,
   revisado_por: Sequelize.INTEGER,
@@ -112,6 +116,8 @@ const KilometrageEntry = sequelize.define('KilometrageEntry', {
   taxi_origen: Sequelize.STRING(200),
   taxi_destino: Sequelize.STRING(200),
   otros: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+  // ¿Quién pagó los apoyos de este registro? (ver migración add-pagado-por)
+  pagado_por: { type: Sequelize.ENUM('personal', 'anticipo', 'empresa'), allowNull: false, defaultValue: 'personal' },
   origen_lat: Sequelize.DECIMAL(10, 7),
   origen_lng: Sequelize.DECIMAL(10, 7),
   destino_lat: Sequelize.DECIMAL(10, 7),
@@ -157,6 +163,8 @@ const ExpenseLegalization = sequelize.define('ExpenseLegalization', {
   moneda: { type: Sequelize.STRING(10), defaultValue: 'COP' },
   gasto_real_total: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   valor_anticipo: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+  // Parte del gasto real que pagó directamente la empresa (no se reembolsa)
+  total_pagado_empresa: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   pago_favor_empresa: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   pago_favor_empleado: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   estado: { type: Sequelize.ENUM('borrador', 'enviado', 'revisado', 'aprobado', 'rechazado'), defaultValue: 'borrador' },
@@ -181,7 +189,9 @@ const Expense = sequelize.define('Expense', {
   servicio: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   propina: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
   valor_legalizable: { type: Sequelize.DECIMAL(12, 2), allowNull: true },
-  medio_pago: { type: Sequelize.ENUM('efectivo', 'tarjeta_debito', 'tarjeta_credito'), defaultValue: 'efectivo' },
+  medio_pago: { type: Sequelize.ENUM('efectivo', 'tarjeta_debito', 'tarjeta_credito', 'cuenta_empresa'), defaultValue: 'efectivo' },
+  // ¿Quién pagó? personal (se reembolsa) · anticipo (se cruza con el anticipo) · empresa (no se reembolsa)
+  pagado_por: { type: Sequelize.ENUM('personal', 'anticipo', 'empresa'), allowNull: false, defaultValue: 'personal' },
   numero_factura: Sequelize.STRING(50),
   cufe: Sequelize.STRING(200),
   imagen_url: Sequelize.STRING(500),

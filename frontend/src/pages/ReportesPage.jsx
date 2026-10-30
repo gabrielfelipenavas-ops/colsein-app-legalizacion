@@ -25,6 +25,9 @@ export default function ReportesPage() {
   const totalTaxis = parseFloat(report?.total_taxis || 0);
   const totalOtros = parseFloat(report?.total_otros || 0);
   const valorTotal = parseFloat(report?.valor_total || 0);
+  const pagadoEmpresa = parseFloat(report?.total_pagado_empresa || 0);
+  const pagadoAnticipo = parseFloat(report?.total_pagado_anticipo || 0);
+  const totalBruto = totalValorKm + totalPeajes + totalParqueaderos + totalTaxis + totalOtros;
 
   const downloadExcel = async () => {
     if (!report) return;
@@ -127,10 +130,17 @@ export default function ReportesPage() {
               <span className="text-xs font-bold font-mono">{fmt(item.value)}</span>
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-500 ${item.color}`} style={{ width: valorTotal > 0 ? `${(item.value / valorTotal) * 100}%` : '0%' }} />
+              <div className={`h-full rounded-full transition-all duration-500 ${item.color}`} style={{ width: totalBruto > 0 ? `${(item.value / totalBruto) * 100}%` : '0%' }} />
             </div>
           </div>
         ))}
+        {(pagadoEmpresa > 0 || pagadoAnticipo > 0) && (
+          <div className="pt-2 mt-1 border-t border-slate-100 space-y-1">
+            <div className="flex justify-between text-xs"><span className="text-slate-500">Total relacionado</span><span className="font-mono font-semibold">{fmt(totalBruto)}</span></div>
+            {pagadoEmpresa > 0 && <div className="flex justify-between text-xs text-amber-700"><span>🏢 Pagado por la empresa (no se reembolsa)</span><span className="font-mono font-semibold">− {fmt(pagadoEmpresa)}</span></div>}
+            {pagadoAnticipo > 0 && <div className="flex justify-between text-xs text-violet-700"><span>💵 Pagado con anticipo (se cruza en la legalización)</span><span className="font-mono font-semibold">− {fmt(pagadoAnticipo)}</span></div>}
+          </div>
+        )}
         <div className="flex justify-between pt-3 mt-2 border-t-2 border-slate-200">
           <span className="text-sm font-extrabold">VALOR A PAGAR</span>
           <span className="text-base font-extrabold text-colsein-600 font-mono">{fmt(valorTotal)}</span>
