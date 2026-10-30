@@ -1,4 +1,15 @@
 require('dotenv').config();
+
+// ── Volumen persistente de Railway ──
+// Cuando se adjunta un volumen al servicio, Railway define automáticamente
+// RAILWAY_VOLUME_MOUNT_PATH (p. ej. /data). Si UPLOAD_DIR no está definido,
+// los archivos subidos se guardan dentro del volumen, que sobrevive a los
+// redespliegues. Se fija aquí, antes de cargar rutas y middlewares, porque
+// todos leen process.env.UPLOAD_DIR.
+if (!process.env.UPLOAD_DIR && process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+  process.env.UPLOAD_DIR = require('path').join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'uploads');
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -87,7 +98,11 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 // redespliegue). Por eso cada archivo subido se guarda también en la tabla
 // `archivos` de PostgreSQL y se restaura al disco cuando hace falta
 // (services/archivos.js). Un volumen persistente + UPLOAD_DIR es opcional.
-console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)} (con copia permanente en la base de datos)`);
+const enVolumen = !!process.env.RAILWAY_VOLUME_MOUNT_PATH && path.resolve(uploadDir).startsWith(path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH));
+console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)} (${enVolumen ? 'volumen persistente de Railway' : 'disco local'} + copia permanente en la base de datos)`);
+if (isProd && !enVolumen) {
+  console.warn('⚠️  El servicio no tiene un volumen persistente: el disco se vacía en cada redespliegue. Los archivos se restauran desde la base de datos, pero se recomienda adjuntar un volumen en Railway (ver README).');
+}
 // Si el archivo no está en el disco (p. ej. tras un redespliegue en Railway),
 // se restaura desde la copia permanente en la base de datos antes de servirlo.
 const archivos = require('./services/archivos');
