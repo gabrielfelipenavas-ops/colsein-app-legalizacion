@@ -191,6 +191,18 @@ const Expense = sequelize.define('Expense', {
   observaciones: Sequelize.TEXT,
 }, { tableName: 'expenses', underscored: true });
 
+// ── Archivo ──
+// Copia permanente en la base de datos de cada archivo subido (fotos de
+// facturas, soportes de kilometraje, firmas). El disco de Railway se borra en
+// cada despliegue; desde aquí se restauran los archivos que falten
+// (ver services/archivos.js).
+const Archivo = sequelize.define('Archivo', {
+  ruta: { type: Sequelize.STRING(500), allowNull: false, unique: true }, // relativa a UPLOAD_DIR
+  mime: Sequelize.STRING(100),
+  tamano: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+  contenido: { type: Sequelize.BLOB, allowNull: false },
+}, { tableName: 'archivos', underscored: true });
+
 // ── EmailMatch ──
 const EmailMatch = sequelize.define('EmailMatch', {
   expense_id: { type: Sequelize.INTEGER, allowNull: false, unique: true },
@@ -339,5 +351,6 @@ db.Trip = Trip;
 db.AuthRequest = AuthRequest;
 db.Establishment = Establishment;
 db.AccountingMapping = AccountingMapping;
+db.Archivo = Archivo;
 
 module.exports = db;

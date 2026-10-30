@@ -103,6 +103,29 @@ UPLOAD_DIR=./uploads
 MAX_FILE_SIZE=10485760
 ```
 
+## Despliegue en Railway: volumen persistente para los soportes
+
+El disco del servicio en Railway es **efímero**: en cada redespliegue arranca vacío.
+La app protege los archivos subidos (fotos de facturas, soportes de kilometraje,
+firmas) de dos formas complementarias:
+
+1. **Copia permanente en PostgreSQL** (tabla `archivos`): se guarda automáticamente
+   al subir cada archivo y se restaura al disco cuando falta. No requiere configuración.
+2. **Volumen persistente** (recomendado): un disco que sobrevive a los redespliegues.
+   Al adjuntarlo, Railway define `RAILWAY_VOLUME_MOUNT_PATH` y la app guarda los
+   archivos en `<mount path>/uploads` sin necesidad de definir `UPLOAD_DIR`.
+
+Pasos para adjuntar el volumen (una sola vez, desde el panel de Railway):
+
+1. Abre el proyecto → clic derecho sobre el servicio de la app (o botón **+ Create**) → **Volume**.
+2. Adjúntalo al servicio de la app (no al de PostgreSQL) y escribe como **Mount path** `/data`.
+3. Railway redespliega el servicio. En los logs debe aparecer:
+   `📁 Archivos subidos en: /data/uploads (volumen persistente de Railway + copia permanente en la base de datos)`.
+4. Si prefieres otra carpeta, define la variable `UPLOAD_DIR` apuntando dentro del volumen (p. ej. `/data/uploads`).
+
+Ten en cuenta que adjuntar el volumen provoca un redespliegue: hazlo con esta versión
+ya publicada, para que las fotos subidas hasta ese momento estén respaldadas en la base de datos.
+
 ## Scripts disponibles
 
 ```bash

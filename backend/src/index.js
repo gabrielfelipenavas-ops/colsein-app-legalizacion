@@ -1,4 +1,15 @@
 require('dotenv').config();
+
+// ── Volumen persistente de Railway ──
+// Cuando se adjunta un volumen al servicio, Railway define automáticamente
+// RAILWAY_VOLUME_MOUNT_PATH (p. ej. /data). Si UPLOAD_DIR no está definido,
+// los archivos subidos se guardan dentro del volumen, que sobrevive a los
+// redespliegues. Se fija aquí, antes de cargar rutas y middlewares, porque
+// todos leen process.env.UPLOAD_DIR.
+if (!process.env.UPLOAD_DIR && process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+  process.env.UPLOAD_DIR = require('path').join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'uploads');
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -83,14 +94,24 @@ app.use('/api', rateLimit({
 // (ejecute) el archivo. Junto con el filtro de tipos, evita el XSS por archivos subidos.
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-// Aviso: en plataformas como Railway el disco es EFÍMERO. Si UPLOAD_DIR no apunta
-// a un volumen persistente, las facturas/soportes subidos se perderán en cada
-// redespliegue. Configura un volumen y la variable UPLOAD_DIR para conservarlos.
-if (isProd && !process.env.UPLOAD_DIR) {
-  console.warn('⚠️  UPLOAD_DIR no está configurado: los archivos subidos se guardan en almacenamiento EFÍMERO y se perderán al redesplegar. Monta un volumen persistente y define UPLOAD_DIR.');
-} else {
-  console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)}`);
+// En plataformas como Railway el disco es EFÍMERO (se vacía en cada
+// redespliegue). Por eso cada archivo subido se guarda también en la tabla
+// `archivos` de PostgreSQL y se restaura al disco cuando hace falta
+// (services/archivos.js). Un volumen persistente + UPLOAD_DIR es opcional.
+const enVolumen = !!process.env.RAILWAY_VOLUME_MOUNT_PATH && path.resolve(uploadDir).startsWith(path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH));
+console.log(`📁 Archivos subidos en: ${path.resolve(uploadDir)} (${enVolumen ? 'volumen persistente de Railway' : 'disco local'} + copia permanente en la base de datos)`);
+if (isProd && !enVolumen) {
+  console.warn('⚠️  El servicio no tiene un volumen persistente: el disco se vacía en cada redespliegue. Los archivos se restauran desde la base de datos, pero se recomienda adjuntar un volumen en Railway (ver README).');
 }
+// Si el archivo no está en el disco (p. ej. tras un redespliegue en Railway),
+// se restaura desde la copia permanente en la base de datos antes de servirlo.
+const archivos = require('./services/archivos');
+app.use('/uploads', (req, res, next) => {
+  const rel = archivos.relDesdeUrl('/uploads/' + req.path.replace(/^\/+/, ''));
+  if (!rel) return next();
+  if (fs.existsSync(path.join(path.resolve(uploadDir), rel))) return next();
+  archivos.asegurar(rel).then(() => next()).catch(() => next());
+});
 app.use('/uploads', express.static(path.resolve(uploadDir), {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -167,6 +188,11 @@ async function start() {
   try {
     await db.sequelize.authenticate();
     console.log('✅ Base de datos conectada');
+    // Copia permanente de los archivos que ya estén en el disco y aún no estén
+    // en la BD (subidos antes de esta mejora). En segundo plano.
+    archivos.respaldarDirectorio()
+      .then(r => { if (r.guardados) console.log(`📦 ${r.guardados} archivo(s) del disco respaldados en la base de datos`); })
+      .catch(err => console.error('[archivos] Respaldo inicial falló:', err.message));
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 API corriendo en http://0.0.0.0:${PORT}`);
       console.log(`📋 Endpoints: http://0.0.0.0:${PORT}/api/health`);
