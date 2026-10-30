@@ -103,29 +103,6 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/expenses — create expense (with optional image)
-// Helper: convert non-browser-friendly formats (HEIC/HEIF) to JPG on upload
-async function normalizeUploadedImage(file) {
-  if (!file) return file;
-  const name = (file.originalname || '').toLowerCase();
-  const mt = (file.mimetype || '').toLowerCase();
-  const needsConversion =
-    name.endsWith('.heic') || name.endsWith('.heif') ||
-    mt === 'image/heic' || mt === 'image/heif';
-  if (!needsConversion) return file;
-  try {
-    const sharp = require('sharp');
-    const newPath = file.path.replace(/\.(heic|heif)$/i, '.jpg');
-    await sharp(file.path).jpeg({ quality: 88 }).toFile(newPath);
-    try { require('fs').unlinkSync(file.path); } catch {}
-    file.path = newPath;
-    file.mimetype = 'image/jpeg';
-    file.originalname = file.originalname.replace(/\.(heic|heif)$/i, '.jpg');
-  } catch (err) {
-    console.warn('[normalize] HEIC conversion failed, leaving original:', err.message);
-  }
-  return file;
-}
-
 router.post('/', auth, upload.single('imagen'), async (req, res) => {
   try {
     const data = buildExpenseData(req.body);
@@ -151,10 +128,9 @@ router.post('/', auth, upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
-      await normalizeUploadedImage(req.file);
-      const uploadDir = process.env.UPLOAD_DIR || './uploads';
-      const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
-      data.imagen_url = `/uploads/${rel}`;
+      // El middleware de subida ya normalizó la imagen (HEIC→JPG, tamaño) y
+      // guardó su copia permanente en la base de datos
+      data.imagen_url = req.file.url;
     }
 
     // datos_ocr puede llegar como string JSON; parsear con tolerancia a errores
@@ -199,9 +175,7 @@ router.post('/ocr', auth, upload.single('imagen'), async (req, res) => {
     if (ocrPath !== req.file.path) { try { require('fs').unlinkSync(ocrPath); } catch {} }
 
     const parsed = parseColombianReceipt(text);
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
-    const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
-    const imagePath = `/uploads/${rel}`;
+    const imagePath = req.file.url;
 
     res.json({ ocr_data: parsed, imagen_url: imagePath, raw_text: text });
   } catch (err) {
@@ -362,10 +336,7 @@ router.put('/:id', auth, upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
-      await normalizeUploadedImage(req.file);
-      const uploadDir = process.env.UPLOAD_DIR || './uploads';
-      const rel = path.relative(path.resolve(uploadDir), path.resolve(req.file.path)).replace(/\\/g, '/');
-      updates.imagen_url = `/uploads/${rel}`;
+      updates.imagen_url = req.file.url;
     }
 
     // Recalcular el valor legalizable con los valores combinados (existentes + cambios)

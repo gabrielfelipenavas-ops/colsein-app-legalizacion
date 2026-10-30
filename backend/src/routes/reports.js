@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { auth, requireRole } = require('../middleware/auth');
 const { generateKilometrageExcel, generateLegalizationExcel, generateAnticipoExcel } = require('../services/excelGenerator');
 const { generateLegalizationPdf } = require('../services/pdfGenerator');
+const archivos = require('../services/archivos');
 const { legalizedTaxiEntryIds } = require('../services/taxiExpenses');
 
 // Roles que pueden descargar documentos de otros empleados
@@ -121,7 +122,6 @@ router.get('/legalizacion/:id/facturas', auth, async (req, res) => {
       return res.status(403).json({ error: 'No tienes permiso para descargar estas facturas' });
     }
 
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const filename = `Facturas_Legalizacion_${leg.id}.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -131,8 +131,8 @@ router.get('/legalizacion/:id/facturas', auth, async (req, res) => {
     let count = 0;
     for (const e of (leg.expenses || [])) {
       if (e.imagen_url && e.imagen_url.startsWith('/uploads/')) {
-        const p = path.resolve(uploadDir, e.imagen_url.replace('/uploads/', ''));
-        if (fs.existsSync(p)) {
+        const p = await archivos.asegurar(e.imagen_url); // restaura desde la BD si hace falta
+        if (p) {
           const ext = path.extname(p) || '.jpg';
           const etq = String(e.establecimiento || e.categoria || 'gasto').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 30);
           archive.file(p, { name: `${e.fecha}_${etq}_${e.id}${ext}` });
@@ -265,20 +265,23 @@ router.get('/diagnose-images', auth, requireRole(...ADMIN_SISTEMA), async (req, 
       limit: 50,
     });
 
-    const results = expenses.map(e => {
-      const imgPath = e.imagen_url?.startsWith('/uploads/')
-        ? path.resolve(uploadDir, e.imagen_url.replace('/uploads/', ''))
-        : null;
-      const exists = imgPath ? fs.existsSync(imgPath) : false;
-      return {
+    const results = [];
+    for (const e of expenses) {
+      const rel = archivos.relDesdeUrl(e.imagen_url);
+      const imgPath = rel ? path.join(resolvedDir, rel) : null;
+      const enDisco = imgPath ? fs.existsSync(imgPath) : false;
+      const enBD = rel ? !!(await db.Archivo.count({ where: { ruta: rel } })) : false;
+      results.push({
         id: e.id,
         fecha: e.fecha,
         establecimiento: e.establecimiento,
         imagen_url: e.imagen_url,
         resolvedPath: imgPath,
-        fileExists: exists,
-      };
-    });
+        fileExists: enDisco || enBD,
+        enDisco,
+        enBaseDatos: enBD,
+      });
+    }
 
     const totalWithUrl = results.filter(r => r.imagen_url).length;
     const totalExisting = results.filter(r => r.fileExists).length;

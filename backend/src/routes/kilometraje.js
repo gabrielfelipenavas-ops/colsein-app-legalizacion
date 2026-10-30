@@ -201,7 +201,9 @@ router.post('/entries/:id/upload/:field', auth, upload.single('foto'), async (re
     const allowed = ['peaje_foto', 'parqueadero_foto', 'taxi_foto', 'otros_foto'];
     if (!allowed.includes(field)) return res.status(400).json({ error: 'Campo no válido' });
 
-    const filePath = `/uploads/${req.file.filename}`;
+    // req.file.url la calcula el middleware de subida (incluye la subcarpeta
+    // YYYY-MM; antes se guardaba sin ella y el soporte quedaba "no disponible")
+    const filePath = req.file.url;
     await entry.update({ [field]: filePath });
     // La foto del taxi es el soporte del gasto espejo en la legalización
     if (field === 'taxi_foto') await syncTaxiExpense(entry);

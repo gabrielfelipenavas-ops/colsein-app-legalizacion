@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const path = require('path');
+const archivos = require('./archivos');
 const fs = require('fs');
 
 // ── Formato colombiano ──
@@ -79,8 +80,9 @@ async function prepararSoporte(exp, uploadDir, tam = 'miniatura') {
     return { texto: exp.observaciones?.includes('[SIN SOPORTE') ? 'Sin soporte: ver justificación en observaciones' : 'Sin soporte adjunto' };
   }
   if (!exp.imagen_url.startsWith('/uploads/')) return { texto: `Soporte externo: ${exp.imagen_url}` };
-  const ruta = path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''));
-  if (!fs.existsSync(ruta)) return { texto: 'Imagen no disponible en el servidor (vuelve a subir el soporte)' };
+  // Si no está en el disco (redespliegue en Railway), se restaura desde la BD
+  const ruta = await archivos.asegurar(exp.imagen_url);
+  if (!ruta) return { texto: 'Imagen no disponible en el servidor (vuelve a subir el soporte)' };
   const ext = path.extname(ruta).toLowerCase();
   if (ext === '.pdf') return { texto: `Soporte en PDF: ${path.basename(ruta)}\n(se adjunta en la descarga de "Facturas")` };
   try {
@@ -408,7 +410,9 @@ async function generateLegalizationPdf(legalization, expenses, user, travelReque
   const SIG_H = 56;
   ensure(SIG_H);
   const sigW = W / 3;
-  const uploadDir = process.env.UPLOAD_DIR || './uploads';
+  // Firma manuscrita registrada en el perfil (restaurada desde la BD si el
+  // disco no la tiene). asegurar() ya evita rutas fuera de uploads.
+  const firmaPath = user?.firma_url ? await archivos.asegurar(user.firma_url) : null;
   const firmas = [
     ['FIRMA DEL EMPLEADO', user?.nombre || '', fmtFecha(legalization.fecha_envio || legalization.updated_at || new Date())],
     ['FIRMA DE REVISIÓN', ['revisado', 'aprobado'].includes(legalization.estado) ? (opts.revisor?.nombre || '') : '', ['revisado', 'aprobado'].includes(legalization.estado) && opts.revisor ? fmtFecha(legalization.updated_at) : ''],
@@ -418,12 +422,8 @@ async function generateLegalizationPdf(legalization, expenses, user, travelReque
     const x = left + i * sigW;
     cell(x, y, sigW, SIG_H, '');
     doc.font('Helvetica-Bold').fontSize(7).fillColor('#000').text(titulo, x + 4, y + 4, { width: sigW - 8, lineBreak: false });
-    if (i === 0 && user?.firma_url && user.firma_url.startsWith('/uploads/')) {
-      // Firma manuscrita registrada en el perfil: solo dentro de uploads (evita path traversal)
-      const p = path.resolve(uploadDir, user.firma_url.replace('/uploads/', ''));
-      if (p.startsWith(path.resolve(uploadDir)) && fs.existsSync(p)) {
-        try { doc.image(p, x + 70, y + 8, { fit: [sigW - 150, 36] }); } catch {}
-      }
+    if (i === 0 && firmaPath) {
+      try { doc.image(firmaPath, x + 70, y + 8, { fit: [sigW - 150, 36] }); } catch {}
     }
     doc.font('Helvetica').fontSize(6.5).fillColor('#000')
       .text(nombre, x + 4, y + SIG_H - 20, { width: sigW - 8, lineBreak: false })

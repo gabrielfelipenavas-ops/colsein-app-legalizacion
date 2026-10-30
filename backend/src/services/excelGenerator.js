@@ -583,11 +583,12 @@ async function generateLegalizationExcel(legalization, expenses, user, travelReq
       imgRow++;
 
       // Try to embed the image
+      // Se restaura desde la BD si el disco no la tiene (redespliegue en Railway)
       const imgPath = exp.imagen_url?.startsWith('/uploads/')
-        ? path.resolve(uploadDir, exp.imagen_url.replace('/uploads/', ''))
+        ? await require('./archivos').asegurar(exp.imagen_url)
         : null;
 
-      const exists = imgPath && fs.existsSync(imgPath);
+      const exists = !!imgPath;
       if (!exists) {
         console.warn(`[excelGenerator] Image not found for expense ${exp.id}: ${imgPath} (imagen_url=${exp.imagen_url})`);
       }

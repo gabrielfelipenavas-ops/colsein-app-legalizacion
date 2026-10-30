@@ -8,6 +8,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../models');
 const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const archivos = require('../services/archivos');
 
 // POST /api/auth/login
 router.post('/login', [
@@ -58,7 +59,9 @@ router.post('/firma', auth, upload.single('firma'), async (req, res) => {
     if (req.file) {
       // Imagen subida como archivo (el filtro de upload.js ya validó la extensión)
       inputBuffer = fs.readFileSync(req.file.path);
-      try { fs.unlinkSync(req.file.path); } catch {}
+      // El archivo temporal (y su copia en la BD) no hacen falta: la firma se
+      // guarda normalizada en /uploads/firmas
+      await archivos.eliminar(req.file.path);
     } else if (req.body?.dataUrl) {
       // Firma dibujada en el canvas de la app
       const match = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(req.body.dataUrl);
@@ -81,13 +84,15 @@ router.post('/firma', auth, upload.single('firma'), async (req, res) => {
     const filename = `firma_${req.user.id}_${uuid()}.png`;
     fs.writeFileSync(path.join(firmasDir, filename), processed);
     const firma_url = `/uploads/firmas/${filename}`;
+    // Copia permanente en la base de datos (el disco de Railway se borra al redesplegar)
+    await archivos.guardar(path.join(firmasDir, filename));
 
     // Borrar la firma anterior del disco (si existía) para no acumular archivos
     const user = await db.User.findByPk(req.user.id);
     if (user.firma_url && user.firma_url.startsWith('/uploads/firmas/')) {
       const old = path.resolve(uploadDir, user.firma_url.replace('/uploads/', ''));
       // Solo dentro del directorio de firmas (evita path traversal)
-      if (old.startsWith(path.resolve(firmasDir))) { try { fs.unlinkSync(old); } catch {} }
+      if (old.startsWith(path.resolve(firmasDir))) await archivos.eliminar(user.firma_url);
     }
 
     await user.update({ firma_url });
