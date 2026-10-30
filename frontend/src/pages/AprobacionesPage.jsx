@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Eye, X, FileText, Route, Briefcase, Image as ImageIcon, MapPin, Calendar, User, Bell, ClipboardCheck, Check, Download } from 'lucide-react';
 import { kmAPI, anticipoAPI, legalizationAPI, expenseAPI, authorizationAPI, reportAPI } from '../services/api';
 import { fmt, dateStr, monthName, ESTADOS_LABEL, ESTADOS_COLOR } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import PdfViewer from '../components/PdfViewer';
 
 function StatusBadge({ status }) {
   const label = ESTADOS_LABEL[status] || status;
@@ -338,6 +339,8 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
   };
 
   const pendingCount = expenses.filter(e => !e.validado).length;
+  const [verPdf, setVerPdf] = useState(false);
+  const fetchPdf = useCallback(() => reportAPI.downloadLegalizacionPdf(legalizacion.id).then(r => r.data), [legalizacion.id]);
 
   const descargar = async (tipo) => {
     try {
@@ -368,6 +371,13 @@ function LegalizacionReview({ legalizacion, onClose, onAction, canAct, canReview
         </div>
 
         <div className="flex gap-2">
+          <button onClick={() => setVerPdf(true)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-slate-700 text-white hover:bg-slate-800 flex items-center justify-center gap-1">
+            <Eye size={13} /> Ver PDF
+          </button>
+          {verPdf && (
+            <PdfViewer title={`Legalización N.º ${legalizacion.id} · ${legalizacion.User?.nombre || ''}`} subtitle={`Estado: ${ESTADOS_LABEL[legalizacion.estado] || legalizacion.estado}`}
+              fetchBlob={fetchPdf} filename={`Legalizacion_${legalizacion.id}.pdf`} onClose={() => setVerPdf(false)} />
+          )}
           <button onClick={() => descargar('pdf')} className="flex-1 py-2 rounded-xl text-[11px] font-bold border border-red-200 text-red-600 bg-white hover:bg-red-50 flex items-center justify-center gap-1">
             <Download size={13} /> PDF firmado
           </button>
