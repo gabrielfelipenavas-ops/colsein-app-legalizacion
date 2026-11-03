@@ -101,6 +101,25 @@ async function prepararSoporte(exp, uploadDir, tam = 'miniatura') {
   }
 }
 
+// Recuadro "FALTA EVIDENCIA" para un gasto sin foto: queda explícito en el PDF
+// impreso qué comprobante falta (en vez de un espacio en blanco) y por qué.
+const ROJO = '#B91C1C';
+function faltaEvidencia(doc, x, y, w, h, motivo) {
+  doc.save();
+  doc.rect(x, y, w, h).fill('#FEF2F2');
+  doc.lineWidth(1).strokeColor(ROJO).dash(4, { space: 3 }).rect(x + 2, y + 2, w - 4, h - 4).stroke().undash();
+  // Tamaño del rótulo ajustado al ancho del recuadro (una sola línea)
+  let grande = 34;
+  doc.font('Helvetica-Bold');
+  while (grande > 10 && doc.fontSize(grande).widthOfString('FALTA EVIDENCIA') > w - 16) grande -= 1;
+  const cy = y + h / 2;
+  doc.fontSize(grande).fillColor(ROJO)
+    .text('FALTA EVIDENCIA', x, cy - grande, { width: w, align: 'center', lineBreak: false });
+  doc.font('Helvetica').fontSize(Math.max(7, Math.round(grande / 3))).fillColor(ROJO)
+    .text(motivo || 'Sin soporte adjunto', x + 8, cy + 6, { width: w - 16, align: 'center' });
+  doc.restore();
+}
+
 async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }) {
   if (!sorted.length) return;
   const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -145,8 +164,7 @@ async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }
       if (sop.buffer) {
         doc.image(sop.buffer, ix, iy, { fit: [iw, ih], align: 'center', valign: 'center' });
       } else {
-        doc.font('Helvetica-Oblique').fontSize(8).fillColor(GRIS)
-          .text(sop.texto, ix, iy + ih / 2 - 10, { width: iw, align: 'center' });
+        faltaEvidencia(doc, ix, iy, iw, ih, sop.texto);
       }
     }
   }
@@ -154,18 +172,21 @@ async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }
   // ── Facturas originales: una por página, a tamaño completo ──
   // El anexo anterior sirve para ubicar cada comprobante; este permite leer
   // cada renglón de la factura (NIT, resolución, IVA, propina) sin lupa.
-  const conFoto = sorted.map((e, idx) => ({ e, idx })).filter(({ e }) => e.imagen_url && !String(e.imagen_url).toLowerCase().endsWith('.pdf'));
+  // Todos los comprobantes van numerados en este anexo: los que tienen foto, a
+  // página completa; los que no, con una página "FALTA EVIDENCIA" para que el
+  // revisor vea exactamente cuál falta. Los soportes en PDF se adjuntan aparte.
   let n = 0;
-  for (const { e, idx } of conFoto) {
-    const sop = await prepararSoporte(e, uploadDir, 'original');
-    if (!sop.buffer) continue; // sin archivo en el servidor: ya quedó el aviso en el anexo anterior
-    n += 1;
+  for (let idx = 0; idx < sorted.length; idx++) {
+    const e = sorted[idx];
+    const esPdf = e.imagen_url && String(e.imagen_url).toLowerCase().endsWith('.pdf');
+    const sop = esPdf ? { texto: `Soporte en PDF: se adjunta en la descarga de "Facturas"` } : await prepararSoporte(e, uploadDir, 'original');
+    if (sop.buffer) n += 1;
     // Las fotos verticales (la mayoría de los recibos) van en hoja vertical
     // para aprovechar toda la página; las apaisadas, en hoja horizontal.
-    doc.addPage({ layout: sop.vertical ? 'portrait' : 'landscape' });
+    doc.addPage({ layout: sop.buffer && !sop.vertical ? 'landscape' : 'portrait' });
     const pw = doc.page.width - 56;
     const pb = doc.page.height - 48;
-    doc.font('Helvetica-Bold').fontSize(sop.vertical ? 9.5 : 11).fillColor(AZUL)
+    doc.font('Helvetica-Bold').fontSize((sop.buffer && !sop.vertical) ? 11 : 9.5).fillColor(AZUL)
       .text(`ANEXO — FACTURA ORIGINAL · Legalización N.º ${legalization.id} · comprobante #${idx + 1} de ${sorted.length}`, left, 28, { width: pw, lineBreak: false, ellipsis: true });
     const estab = [e.establecimiento, e.nit_establecimiento ? `NIT ${e.nit_establecimiento}` : null].filter(Boolean).join(' · ');
     doc.font('Helvetica').fontSize(8).fillColor('#334155')
@@ -173,7 +194,11 @@ async function anexoSoportes(doc, sorted, legalization, { left, W, bottomLimit }
     const iy = 60;
     const ih = pb - iy;
     doc.lineWidth(0.5).strokeColor('#CBD5E1').rect(left, iy, pw, ih).stroke();
-    doc.image(sop.buffer, left + 3, iy + 3, { fit: [pw - 6, ih - 6], align: 'center', valign: 'center' });
+    if (sop.buffer) {
+      doc.image(sop.buffer, left + 3, iy + 3, { fit: [pw - 6, ih - 6], align: 'center', valign: 'center' });
+    } else {
+      faltaEvidencia(doc, left + 3, iy + 3, pw - 6, ih - 6, sop.texto);
+    }
   }
   if (n) console.log(`[pdfGenerator] Legalización ${legalization.id}: ${n} factura(s) original(es) a página completa`);
 }
